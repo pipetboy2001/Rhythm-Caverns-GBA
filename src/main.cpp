@@ -202,6 +202,7 @@ namespace
     constexpr int HELP_LINE_COUNT = sizeof(HELP_LINES) / sizeof(HELP_LINES[0]);
 
     constexpr const char* CREDITS_LINES[] = {
+        "UN JUEGO DE PIPETBOY",
         "MÚSICA: SPRING+VINSCOOL",
         "(OPENGAMEART, CC0)",
         "ARTE: TOADZILLART",
@@ -537,7 +538,8 @@ int main()
         for (int i = 0; i < CREDITS_LINE_COUNT; ++i)
         {
             credits_text[i].clear();
-            text_generator.generate(-74, -56 + i * 16, CREDITS_LINES[i], credits_text[i]);
+            // Interlineado 14: con el crédito del autor son 9 líneas.
+            text_generator.generate(-74, -56 + i * 14, CREDITS_LINES[i], credits_text[i]);
         }
     };
 
