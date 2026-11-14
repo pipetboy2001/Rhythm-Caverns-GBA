@@ -1540,6 +1540,10 @@ int main()
             {
                 phase = game_phase::ended;
                 bn::music::stop();
+                // Sin esto, los enemigos en camino quedaban congelados en
+                // pantalla y seguían visibles por todos los menús hasta la
+                // próxima partida (solo reset_game los limpiaba).
+                active_notes.clear();
                 bool new_record = save_results(false, 0, false);
                 message_text.clear();
                 text_generator.generate(-48, -32, "GAME OVER", message_text);
