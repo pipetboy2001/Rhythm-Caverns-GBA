@@ -69,7 +69,8 @@ namespace
     constexpr int MISS_FRAMES = 14;
     constexpr int PERFECT_FRAMES = 4;
     constexpr int GREAT_FRAMES = 9;
-    constexpr int MAX_HP = 5;
+    constexpr int MAX_HP = 5; // vida inicial
+    constexpr int HP_CAP = 6; // el corazón curativo puede dar uno extra
     constexpr int EUPHORIA_MAX = 100;
     constexpr int EUPHORIA_BAR_SEGMENTS = 10;
     constexpr int EUPHORIA_BEATS = 16;
@@ -109,10 +110,10 @@ namespace
         return colors;
     }
 
-    // Amarillo muy brillante (casi blanco en luminancia, legible en la SP)
-    // para el aviso de NUEVO RÉCORD, que además parpadea — paleta propia,
+    // El aviso de NUEVO RÉCORD va en blanco (la regla de la SP: texto
+    // legible = blanco) y brilla pulsando hacia dorado — paleta propia,
     // así el parpadeo no tiñe el resto del texto.
-    constexpr bn::array<bn::color, 16> RECORD_TEXT_COLORS = solid_text_colors(bn::color(31, 29, 13));
+    constexpr bn::array<bn::color, 16> RECORD_TEXT_COLORS = solid_text_colors(bn::color(31, 31, 31));
     constexpr bn::sprite_palette_item RECORD_TEXT_PALETTE(
             bn::span<const bn::color>(RECORD_TEXT_COLORS), bn::bpp_mode::BPP_4);
 
@@ -785,10 +786,12 @@ int main()
 
     // Corazones de HP: sprites fijos (se crean una sola vez), se tiñen
     // según cuántos quedan en vez de regenerar texto cada vez.
-    bn::vector<bn::sprite_ptr, MAX_HP> heart_sprites;
-    for (int i = 0; i < MAX_HP; ++i)
+    // HP_CAP ranuras (la sexta solo se llena con el corazón curativo);
+    // arrancan en x 58 para que la sexta no se salga de pantalla.
+    bn::vector<bn::sprite_ptr, HP_CAP> heart_sprites;
+    for (int i = 0; i < HP_CAP; ++i)
     {
-        heart_sprites.push_back(bn::sprite_items::heart.create_sprite(64 + i * 11, -72));
+        heart_sprites.push_back(bn::sprite_items::heart.create_sprite(58 + i * 11, -72));
     }
     bn::vector<bn::sprite_ptr, 56> message_text;
     bn::vector<bn::sprite_ptr, 16> judgement_text;
@@ -1582,9 +1585,9 @@ int main()
                     bool heals = note.type == enemy_type::heart;
                     detach_sprite(note, true);
                     resolve_hit(note, tier);
-                    if (heals && hp < MAX_HP)
+                    if (heals && hp < HP_CAP)
                     {
-                        ++hp;
+                        ++hp; // con vida llena da un sexto corazón extra
                     }
                 }
 
@@ -1987,7 +1990,7 @@ int main()
             // paletas idénticas), así que teñir el perdido teñía todos
             // (bug visto en consola real: 1 golpe "apagaba" las 5 vidas).
             // El corazón perdido se oculta en vez de teñirse.
-            for (int i = 0; i < MAX_HP; ++i)
+            for (int i = 0; i < HP_CAP; ++i)
             {
                 heart_sprites[i].set_visible(i < hp);
             }
@@ -2025,13 +2028,14 @@ int main()
             }
         }
 
-        // El aviso de NUEVO RÉCORD parpadea (paleta propia: no tiñe nada más).
+        // El aviso de NUEVO RÉCORD pulsa de blanco a dorado (paleta
+        // propia: no tiñe nada más).
         if (!record_banner_text.empty())
         {
             int blink = frame % 40;
             blink = blink < 20 ? blink : 40 - blink;
             bn::sprite_palette_ptr banner_palette = record_banner_text[0].palette();
-            banner_palette.set_fade(bn::colors::white, bn::fixed(blink) / 50);
+            banner_palette.set_fade(bn::colors::yellow, bn::fixed(blink) / 40);
         }
 
         // Los destellos del anillo expiran solos (en pausa se ocultan al
