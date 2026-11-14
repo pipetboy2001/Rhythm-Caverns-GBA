@@ -51,6 +51,7 @@
 #include "bn_sprite_items_mote.h"
 #include "bn_sprite_items_hit_flash.h"
 #include "bn_sprite_items_meter_seg.h"
+#include "bn_sprite_items_rank_letters.h"
 
 #include "common_variable_8x16_sprite_font.h"
 
@@ -107,6 +108,13 @@ namespace
         }
         return colors;
     }
+
+    // Amarillo muy brillante (casi blanco en luminancia, legible en la SP)
+    // para el aviso de NUEVO RÉCORD, que además parpadea — paleta propia,
+    // así el parpadeo no tiñe el resto del texto.
+    constexpr bn::array<bn::color, 16> RECORD_TEXT_COLORS = solid_text_colors(bn::color(31, 29, 13));
+    constexpr bn::sprite_palette_item RECORD_TEXT_PALETTE(
+            bn::span<const bn::color>(RECORD_TEXT_COLORS), bn::bpp_mode::BPP_4);
 
     // Sombra casi negra para que el texto coloreado se lea sobre la tarjeta.
     constexpr bn::array<bn::color, 16> OUTLINE_TEXT_COLORS = solid_text_colors(bn::color(2, 2, 4));
@@ -450,6 +458,12 @@ int main()
     // set de enemigos de su zona, animado (estilo Rhythm Tengoku).
     bn::sprite_ptr zone_icon = bn::sprite_items::enemy_bat.create_sprite(72, -40);
     zone_icon.set_visible(false);
+
+    // Letra de rango gigante (frames C/B/A/S) y aviso de récord con
+    // parpadeo propio, para la pantalla de resultados.
+    bn::sprite_ptr rank_sprite = bn::sprite_items::rank_letters.create_sprite(12, -2);
+    rank_sprite.set_visible(false);
+    bn::vector<bn::sprite_ptr, 16> record_banner_text;
 
     bn::vector<dust_mote, 6> motes;
     {
@@ -1279,6 +1293,8 @@ int main()
             else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
             {
                 message_text.clear();
+                record_banner_text.clear();
+                rank_sprite.set_visible(false);
                 for (int k = 0; k < ENDED_OPTION_COUNT; ++k)
                 {
                     ended_line[k].clear();
@@ -1526,14 +1542,16 @@ int main()
                 bn::music::stop();
                 bool new_record = save_results(false, 0, false);
                 message_text.clear();
-                text_generator.generate(-48, -28, "GAME OVER", message_text);
+                text_generator.generate(-48, -32, "GAME OVER", message_text);
                 bn::string<20> acc_line = "PRECISIÓN ";
                 acc_line.append(bn::to_string<4>(accuracy_percent()));
                 acc_line.append("%");
-                text_generator.generate(-48, -10, acc_line, message_text);
+                text_generator.generate(-48, -6, acc_line, message_text);
                 if (new_record)
                 {
-                    text_generator.generate(-56, 8, "NUEVO RÉCORD", message_text);
+                    text_generator.set_palette_item(RECORD_TEXT_PALETTE);
+                    text_generator.generate(-48, 16, "NUEVO RÉCORD", record_banner_text);
+                    text_generator.set_palette_item(default_text_palette);
                 }
                 ended_cursor = 0;
                 draw_ended_menu();
@@ -1547,22 +1565,26 @@ int main()
                 bool full_combo = miss_count == 0;
                 bool new_record = save_results(true, rank_index, full_combo);
                 message_text.clear();
-                text_generator.generate(-24, -28, "LISTO", message_text);
-                bn::string<16> rank_line = "RANGO ";
-                rank_line.append(RANK_NAMES[rank_index]);
+                // Arriba: estado a la izquierda y aviso de récord a la
+                // derecha; al centro el trofeo — la letra de rango gigante.
+                text_generator.generate(-70, -32, "LISTO", message_text);
+                if (new_record)
+                {
+                    text_generator.set_palette_item(RECORD_TEXT_PALETTE);
+                    text_generator.generate(-4, -32, "NUEVO RÉCORD", record_banner_text);
+                    text_generator.set_palette_item(default_text_palette);
+                }
+                text_generator.generate(-58, -2, "RANGO", message_text);
+                rank_sprite.set_item(bn::sprite_items::rank_letters, rank_index - 1);
+                rank_sprite.set_visible(true);
                 if (full_combo)
                 {
-                    rank_line.append(" *"); // estrella de full combo
+                    text_generator.generate(34, -8, "*", message_text);
                 }
-                text_generator.generate(-32, -10, rank_line, message_text);
                 bn::string<20> acc_line = "PRECISIÓN ";
                 acc_line.append(bn::to_string<4>(accuracy));
                 acc_line.append("%");
-                text_generator.generate(-48, 8, acc_line, message_text);
-                if (new_record)
-                {
-                    text_generator.generate(-56, 26, "NUEVO RÉCORD", message_text);
-                }
+                text_generator.generate(-48, 22, acc_line, message_text);
                 ended_cursor = 0;
                 draw_ended_menu();
             }
@@ -1901,6 +1923,15 @@ int main()
             {
                 meter_palette.set_fade_intensity(0);
             }
+        }
+
+        // El aviso de NUEVO RÉCORD parpadea (paleta propia: no tiñe nada más).
+        if (!record_banner_text.empty())
+        {
+            int blink = frame % 40;
+            blink = blink < 20 ? blink : 40 - blink;
+            bn::sprite_palette_ptr banner_palette = record_banner_text[0].palette();
+            banner_palette.set_fade(bn::colors::white, bn::fixed(blink) / 50);
         }
 
         // Los destellos del anillo expiran solos (en pausa se ocultan al

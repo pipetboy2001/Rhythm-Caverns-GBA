@@ -95,5 +95,48 @@ def main():
     print(HERE / "logo_banner.png")
 
 
+def make_rank_letters():
+    """graphics/rank_letters.bmp: letras C/B/A/S de 32x32 (4 frames) para
+    la pantalla de resultados — color por rango, brillo arriba, contorno
+    tinta y sombra, estilo del logo."""
+    font = ImageFont.truetype("C:/Windows/Fonts/impact.ttf", 30)
+    # (letra, relleno, brillo) — C rojo, B teal, A verde, S dorado.
+    ranks = [
+        ("C", (0xFF, 0x5A, 0x48), (0xFF, 0x9E, 0x90)),
+        ("B", (0x3F, 0xD3, 0xC3), (0xA8, 0xF0, 0xE8)),
+        ("A", (0x58, 0xE0, 0x63), (0xB4, 0xF5, 0xB8)),
+        ("S", (0xFF, 0xC2, 0x3C), (0xFF, 0xF0, 0xA0)),
+    ]
+    palette = [(255, 0, 255), INK]
+    for _, fill, shine in ranks:
+        palette += [fill, shine]
+    out = Image.new("P", (32, 32 * len(ranks)))
+    pixels = [0] * (32 * 32 * len(ranks))
+    for f, (letter, _, _) in enumerate(ranks):
+        box = font.getbbox(letter)
+        mask = Image.new("L", (32, 32), 0)
+        ImageDraw.Draw(mask).text(((32 - (box[2] - box[0])) // 2 - box[0],
+                                   (32 - (box[3] - box[1])) // 2 - box[1]),
+                                  letter, font=font, fill=255)
+        mask = mask.point(lambda p: 255 if p > 100 else 0)
+        fat = mask.filter(ImageFilter.MaxFilter(3))
+        shadow = fat.transform((32, 32), Image.AFFINE, (1, 0, -1, 0, 1, -1))
+        top = min((y for y in range(32) for x in range(32) if mask.getpixel((x, y))), default=0)
+        for y in range(32):
+            for x in range(32):
+                i = (f * 32 + y) * 32 + x
+                if mask.getpixel((x, y)):
+                    pixels[i] = 3 + f * 2 if y < top + 10 else 2 + f * 2
+                elif fat.getpixel((x, y)) or shadow.getpixel((x, y)):
+                    pixels[i] = 1
+    out.putdata(pixels)
+    out.putpalette([c for rgb in palette for c in rgb] + [0] * (768 - 3 * len(palette)))
+    out.save(HERE.parent / "graphics" / "rank_letters.bmp")
+    (HERE.parent / "graphics" / "rank_letters.json").write_text(
+            '{\n    "type": "sprite",\n\t"height": 32\n}\n')
+    print(f"rank_letters: 4 frames, {len(palette)} colores")
+
+
 if __name__ == "__main__":
     main()
+    make_rank_letters()
