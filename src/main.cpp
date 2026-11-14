@@ -216,9 +216,9 @@ namespace
     // Récord por canción y dificultad, persistido en SRAM. magic detecta la
     // primera vez que corre el juego en un cartucho/batería nueva (SRAM sin
     // inicializar, basura de fábrica) para no mostrar un récord falso.
-    // 55: se sumó el flag konami al layout — el magic nuevo descarta
-    // saves viejos.
-    constexpr int SAVE_MAGIC = 0x474F4C55;
+    // 56: se sumaron music_volume/sfx_volume al layout — el magic nuevo
+    // descarta saves viejos.
+    constexpr int SAVE_MAGIC = 0x474F4C56;
 
     // Tope del ajuste de latencia, en frames (~17 ms cada uno).
     constexpr int LATENCY_LIMIT = 15;
@@ -231,6 +231,8 @@ namespace
         int stars[SONG_LIST_COUNT][DIFFICULTY_COUNT]; // 1 = full combo logrado
         int latency; // frames que se restan al reloj de juicio (+ = pegas tarde)
         int konami;  // easter egg: 1 = todo desbloqueado
+        int music_volume; // 0..10 (décimas)
+        int sfx_volume;   // 0..10 (décimas)
     };
 
     bn::fixed_point lane_direction(lane ln)
@@ -374,12 +376,21 @@ int main()
         }
         save.latency = 0;
         save.konami = 0;
+        save.music_volume = 10;
+        save.sfx_volume = 10;
         bn::sram::write(save);
     }
 
     // Chart de la partida en curso: se construye en reset_game() con la
     // semilla de canción+dificultad (cada combinación es única).
     bn::vector<chart_note, CHART_MAX_NOTES> current_chart;
+
+    // Todos los efectos de sonido pasan por acá para respetar el volumen
+    // de EFECTOS de la configuración.
+    const auto play_sfx = [&](bn::sound_item item)
+    {
+        item.play(bn::fixed(save.sfx_volume) / 10);
+    };
 
     // Desbloqueo de canciones: BATTLE siempre abierta; terminar una
     // canción en una dificultad abre la siguiente en esa dificultad y
@@ -558,33 +569,46 @@ int main()
         }
     };
 
-    // Configuración: por ahora solo el ajuste de latencia (en frames,
-    // ~17 ms cada uno). Positivo = el juicio se corre hacia atrás, para
-    // quien siente que pega tarde aunque vaya al ritmo.
-    constexpr int SETTINGS_LINE_COUNT = 5;
+    // Configuración: lista de opciones con < valor >, navegable con
+    // arriba/abajo (la tarjeta de cursor marca la fila activa) y
+    // ajustable con izquierda/derecha. Latencia en frames (~17 ms c/u,
+    // positivo = para quien pega tarde); volúmenes en pasos de 10%.
+    constexpr int SETTINGS_OPTION_COUNT = 3;
+    constexpr int SETTINGS_LINE_COUNT = SETTINGS_OPTION_COUNT + 2;
     bn::vector<bn::sprite_ptr, 28> settings_text[SETTINGS_LINE_COUNT];
+    int settings_cursor = 0;
 
     const auto draw_settings = [&]()
     {
-        bn::string<24> value_line = "LATENCIA: ";
-        if (save.latency > 0)
-        {
-            value_line.append("+");
-        }
-        value_line.append(bn::to_string<4>(save.latency));
-        const char* lines[SETTINGS_LINE_COUNT] = {
-            value_line.c_str(),
-            "IZQ/DER AJUSTA (17 MS)",
-            "SI PEGAS TARDE SUBILA",
-            "SI PEGAS ANTES BAJALA",
-            "B GUARDA Y VUELVE",
-        };
-        constexpr int SETTINGS_Y[SETTINGS_LINE_COUNT] = { -48, -24, -8, 8, 40 };
-        for (int i = 0; i < SETTINGS_LINE_COUNT; ++i)
+        constexpr const char* SETTING_LABELS[SETTINGS_OPTION_COUNT] =
+                { "LATENCIA", "MÚSICA", "EFECTOS" };
+        for (int i = 0; i < SETTINGS_OPTION_COUNT; ++i)
         {
             settings_text[i].clear();
-            text_generator.generate(-74, SETTINGS_Y[i], lines[i], settings_text[i]);
+            bn::fixed y = -52 + i * 20;
+            text_generator.generate(i == settings_cursor ? -70 : -74, y,
+                    SETTING_LABELS[i], settings_text[i]);
+            bn::string<12> value = "< ";
+            if (i == 0)
+            {
+                if (save.latency > 0)
+                {
+                    value.append("+");
+                }
+                value.append(bn::to_string<4>(save.latency));
+            }
+            else
+            {
+                value.append(bn::to_string<4>((i == 1 ? save.music_volume : save.sfx_volume) * 10));
+                value.append("%");
+            }
+            value.append(" >");
+            text_generator.generate(18, y, value, settings_text[i]);
         }
+        settings_text[3].clear();
+        text_generator.generate(-74, 16, "¿PEGAS TARDE? MÁS LATENCIA", settings_text[3]);
+        settings_text[4].clear();
+        text_generator.generate(-74, 44, "B GUARDA Y VUELVE", settings_text[4]);
     };
 
     const auto clear_settings = [&]()
@@ -701,7 +725,7 @@ int main()
     // y validado por el propio repo de Butano.
     const auto play_menu_music = [&]()
     {
-        bn::music::play(bn::music_items::battle_clean, 1, true);
+        bn::music::play(bn::music_items::battle_clean, bn::fixed(save.music_volume) / 10, true);
     };
     play_menu_music();
 
@@ -891,7 +915,7 @@ int main()
         shown_combo = -1;
         score_text.clear();
         combo_text.clear();
-        bn::music::play(SONG_LIST[selected_song_index].music, 1, true);
+        bn::music::play(SONG_LIST[selected_song_index].music, bn::fixed(save.music_volume) / 10, true);
     };
 
     // Guarda récord, mejor rango y estrella de full combo (el rango y la
@@ -975,7 +999,7 @@ int main()
                                SPARK_DIRS[dir], frame });
         }
 
-        bn::sound_items::sfx_hit.play();
+        play_sfx(bn::sound_items::sfx_hit);
     };
 
     const auto register_miss = [&](active_note&)
@@ -1001,7 +1025,7 @@ int main()
         judgement_until = frame + JUDGEMENT_FRAMES;
         shake_until = frame + 8;
 
-        bn::sound_items::sfx_miss.play();
+        play_sfx(bn::sound_items::sfx_miss);
     };
 
     // Pasa el sprite de una nota que se resuelve a la lista de "muriendo",
@@ -1057,19 +1081,19 @@ int main()
                     save.konami = 1;
                     bn::sram::write(save);
                 }
-                bn::sound_items::sfx_hit.play();
+                play_sfx(bn::sound_items::sfx_hit);
             }
             else if (bn::keypad::up_pressed())
             {
                 main_menu_cursor = (main_menu_cursor + MAIN_MENU_OPTION_COUNT - 1) % MAIN_MENU_OPTION_COUNT;
                 draw_main_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::down_pressed())
             {
                 main_menu_cursor = (main_menu_cursor + 1) % MAIN_MENU_OPTION_COUNT;
                 draw_main_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             // A confirma igual que START en todos los menús (en consola real
             // es el botón natural de "aceptar"); jugando, A queda reservado.
@@ -1079,7 +1103,7 @@ int main()
                 {
                     main_menu_line[k].clear();
                 }
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
 
                 if (main_menu_cursor == 0)
                 {
@@ -1101,6 +1125,7 @@ int main()
                     }
                     else if (main_menu_cursor == 2)
                     {
+                        settings_cursor = 0;
                         draw_settings();
                         phase = game_phase::settings;
                     }
@@ -1114,16 +1139,47 @@ int main()
         }
         else if (phase == game_phase::settings)
         {
-            if (bn::keypad::left_pressed() || bn::keypad::right_pressed())
+            if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+            {
+                int delta = bn::keypad::up_pressed() ? -1 : 1;
+                settings_cursor = (settings_cursor + SETTINGS_OPTION_COUNT + delta) % SETTINGS_OPTION_COUNT;
+                draw_settings();
+                play_sfx(bn::sound_items::sfx_menu_move);
+            }
+            else if (bn::keypad::left_pressed() || bn::keypad::right_pressed())
             {
                 int delta = bn::keypad::left_pressed() ? -1 : 1;
-                int adjusted = save.latency + delta;
-                if (adjusted >= -LATENCY_LIMIT && adjusted <= LATENCY_LIMIT)
+                if (settings_cursor == 0)
                 {
-                    save.latency = adjusted;
-                    draw_settings();
-                    bn::sound_items::sfx_menu_move.play();
+                    int adjusted = save.latency + delta;
+                    if (adjusted >= -LATENCY_LIMIT && adjusted <= LATENCY_LIMIT)
+                    {
+                        save.latency = adjusted;
+                        play_sfx(bn::sound_items::sfx_menu_move);
+                    }
                 }
+                else if (settings_cursor == 1)
+                {
+                    int adjusted = save.music_volume + delta;
+                    if (adjusted >= 0 && adjusted <= 10)
+                    {
+                        save.music_volume = adjusted;
+                        // En vivo: el tema de menú cambia de volumen ya.
+                        bn::music::set_volume(bn::fixed(adjusted) / 10);
+                        play_sfx(bn::sound_items::sfx_menu_move);
+                    }
+                }
+                else
+                {
+                    int adjusted = save.sfx_volume + delta;
+                    if (adjusted >= 0 && adjusted <= 10)
+                    {
+                        save.sfx_volume = adjusted;
+                        // La prueba en vivo es el propio golpe.
+                        play_sfx(bn::sound_items::sfx_hit);
+                    }
+                }
+                draw_settings();
             }
             else if (bn::keypad::b_pressed())
             {
@@ -1131,7 +1187,7 @@ int main()
                 bn::sram::write(save);
                 draw_main_menu();
                 phase = game_phase::main_menu;
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
             }
         }
         else if (phase == game_phase::credits || phase == game_phase::how_to_play)
@@ -1148,7 +1204,7 @@ int main()
                 }
                 draw_main_menu();
                 phase = game_phase::main_menu;
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
             }
         }
         else if (phase == game_phase::song_select)
@@ -1158,26 +1214,26 @@ int main()
                 menu_song = (menu_song + SONG_LIST_COUNT - 1) % SONG_LIST_COUNT;
                 preview_pending_at = frame + PREVIEW_DEBOUNCE;
                 draw_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::down_pressed())
             {
                 menu_song = (menu_song + 1) % SONG_LIST_COUNT;
                 preview_pending_at = frame + PREVIEW_DEBOUNCE;
                 draw_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::l_pressed())
             {
                 menu_difficulty = (menu_difficulty + DIFFICULTY_COUNT - 1) % DIFFICULTY_COUNT;
                 draw_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::r_pressed())
             {
                 menu_difficulty = (menu_difficulty + 1) % DIFFICULTY_COUNT;
                 draw_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::b_pressed())
             {
@@ -1191,14 +1247,14 @@ int main()
                 preview_pending_at = 0;
                 draw_main_menu();
                 phase = game_phase::main_menu;
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
             }
             else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
             {
                 if (!song_unlocked(menu_song, menu_difficulty))
                 {
                     // Bloqueada en esta dificultad: hay que ganársela.
-                    bn::sound_items::sfx_miss.play();
+                    play_sfx(bn::sound_items::sfx_miss);
                 }
                 else
                 {
@@ -1211,7 +1267,7 @@ int main()
                     selected_difficulty = menu_difficulty;
                     reset_game();
                     phase = game_phase::playing;
-                    bn::sound_items::sfx_menu_select.play();
+                    play_sfx(bn::sound_items::sfx_menu_select);
                 }
             }
 
@@ -1224,7 +1280,7 @@ int main()
                 {
                     if (preview_song != menu_song)
                     {
-                        bn::music::play(SONG_LIST[menu_song].music, 1, true);
+                        bn::music::play(SONG_LIST[menu_song].music, bn::fixed(save.music_volume) / 10, true);
                         preview_song = menu_song;
                     }
                     preview_until = frame + PREVIEW_LENGTH;
@@ -1248,7 +1304,7 @@ int main()
             {
                 ended_cursor = (ended_cursor + 1) % PAUSE_OPTION_COUNT;
                 draw_pause_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::b_pressed() || (start_now && ended_cursor == 0))
             {
@@ -1261,7 +1317,7 @@ int main()
                 set_battle_sprites_visible(true);
                 bn::music::resume();
                 phase = game_phase::playing;
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
             }
             else if (start_now)
             {
@@ -1284,7 +1340,7 @@ int main()
                 draw_menu();
                 preview_pending_at = frame + PREVIEW_DEBOUNCE;
                 phase = game_phase::song_select;
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
             }
         }
         else if (phase == game_phase::ended)
@@ -1293,13 +1349,13 @@ int main()
             {
                 ended_cursor = (ended_cursor + ENDED_OPTION_COUNT - 1) % ENDED_OPTION_COUNT;
                 draw_ended_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::down_pressed())
             {
                 ended_cursor = (ended_cursor + 1) % ENDED_OPTION_COUNT;
                 draw_ended_menu();
-                bn::sound_items::sfx_menu_move.play();
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
             {
@@ -1310,7 +1366,7 @@ int main()
                 {
                     ended_line[k].clear();
                 }
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
 
                 if (ended_cursor == 0)
                 {
@@ -1624,7 +1680,7 @@ int main()
                 text_generator.generate(-24, -28, "PAUSA", message_text);
                 ended_cursor = 0;
                 draw_pause_menu();
-                bn::sound_items::sfx_menu_select.play();
+                play_sfx(bn::sound_items::sfx_menu_select);
             }
         }
 
@@ -1704,6 +1760,10 @@ int main()
             else if (phase == game_phase::paused || phase == game_phase::ended)
             {
                 cursor_target = 40 + ended_cursor * 18;
+            }
+            else if (phase == game_phase::settings)
+            {
+                cursor_target = -52 + settings_cursor * 20;
             }
             else
             {
