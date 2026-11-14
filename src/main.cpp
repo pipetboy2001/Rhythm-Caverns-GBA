@@ -1733,9 +1733,9 @@ int main()
             }
         }
 
-        // En el selector de canciones el héroe-mascota estorba: la estrella
-        // ahí es el bicho de cada canción.
-        if (phase == game_phase::song_select)
+        // El héroe-mascota estorba en el selector (la estrella es el bicho
+        // de cada canción) y en CÓMO JUGAR (los iconos ya ilustran).
+        if (phase == game_phase::song_select || phase == game_phase::how_to_play)
         {
             hero_sprite.set_visible(false);
         }
