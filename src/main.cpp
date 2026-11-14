@@ -188,15 +188,15 @@ namespace
     constexpr const char* MAIN_MENU_OPTIONS[] = { "JUGAR", "CÓMO JUGAR", "CONFIGURACIÓN", "CRÉDITOS" };
     constexpr int MAIN_MENU_OPTION_COUNT = sizeof(MAIN_MENU_OPTIONS) / sizeof(MAIN_MENU_OPTIONS[0]);
 
+    // Sin pista del código Konami: secreto de verdad, que lo descubran.
     constexpr const char* HELP_LINES[] = {
         "PEGA CON LA CRUCETA",
         "AL PISAR EL ANILLO",
-        "FILA DE 3: TOCA LA",
-        "CRUCETA 3 VECES",
+        "FILA DE 3: 3 TOQUES",
         "EUFORIA LLENA: A = X2",
         "CORAZÓN: PÉGALE Y CURA",
         "START PAUSA EL JUEGO",
-        "PSST: KONAMI",
+        "",
         "B PARA VOLVER",
     };
     constexpr int HELP_LINE_COUNT = sizeof(HELP_LINES) / sizeof(HELP_LINES[0]);
@@ -459,6 +459,18 @@ int main()
     bn::sprite_ptr zone_icon = bn::sprite_items::enemy_bat.create_sprite(72, -40);
     zone_icon.set_visible(false);
 
+    // Iconos vivos de CÓMO JUGAR: un ejemplar de cada mecánica junto a su
+    // línea (enemigo, fila cian, bloque de euforia, corazón).
+    bn::vector<bn::sprite_ptr, 4> help_icons;
+    help_icons.push_back(bn::sprite_items::enemy_slime.create_sprite(-66, -48));
+    help_icons.push_back(bn::sprite_items::enemy_spider.create_sprite(-66, -24));
+    help_icons.push_back(bn::sprite_items::meter_seg.create_sprite(-66, -8));
+    help_icons.push_back(bn::sprite_items::heart_pickup.create_sprite(-66, 8));
+    for (bn::sprite_ptr& help_icon : help_icons)
+    {
+        help_icon.set_visible(false);
+    }
+
     // Letra de rango gigante (frames C/B/A/S) y aviso de récord con
     // parpadeo propio, para la pantalla de resultados.
     bn::sprite_ptr rank_sprite = bn::sprite_items::rank_letters.create_sprite(12, -2);
@@ -533,9 +545,8 @@ int main()
         for (int i = 0; i < HELP_LINE_COUNT; ++i)
         {
             help_text[i].clear();
-            // Interlineado 14 y no 16: con la pista del easter egg son 9
-            // líneas y tienen que entrar en la tarjeta.
-            text_generator.generate(-74, -56 + i * 14, HELP_LINES[i], help_text[i]);
+            // x -52: el margen izquierdo es para los iconos de ejemplo.
+            text_generator.generate(-52, -56 + i * 16, HELP_LINES[i], help_text[i]);
         }
     };
 
@@ -1745,6 +1756,29 @@ int main()
                 zone_icon.set_position(72, -40 + (menu_song - menu_scroll) * 16);
                 bn::sprite_palette_ptr icon_palette = zone_icon.palette();
                 icon_palette.set_fade_intensity(0); // sin tintes heredados del juego
+            }
+        }
+
+        // Iconos de CÓMO JUGAR: animados y con el tinte que tendrán en
+        // juego (la fila de 3 se ve cian), limpios de fades heredados.
+        {
+            bool help_icons_visible = phase == game_phase::how_to_play;
+            for (bn::sprite_ptr& help_icon : help_icons)
+            {
+                help_icon.set_visible(help_icons_visible);
+            }
+            if (help_icons_visible)
+            {
+                int help_step = (frame * 2 / 29) % 2;
+                help_icons[0].set_item(bn::sprite_items::enemy_slime, help_step);
+                help_icons[1].set_item(bn::sprite_items::enemy_spider, help_step);
+                help_icons[2].set_item(bn::sprite_items::meter_seg, 1);
+                bn::sprite_palette_ptr basic_palette = help_icons[0].palette();
+                basic_palette.set_fade_intensity(0);
+                bn::sprite_palette_ptr chain_palette = help_icons[1].palette();
+                chain_palette.set_fade(bn::colors::cyan, 0.5);
+                bn::sprite_palette_ptr heal_palette = help_icons[3].palette();
+                heal_palette.set_fade_intensity(0);
             }
         }
 
