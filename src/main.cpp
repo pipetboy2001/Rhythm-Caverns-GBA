@@ -186,7 +186,7 @@ namespace
     constexpr const char* PAUSE_OPTIONS[] = { "CONTINUAR", "SALIR" };
     constexpr int PAUSE_OPTION_COUNT = sizeof(PAUSE_OPTIONS) / sizeof(PAUSE_OPTIONS[0]);
 
-    constexpr const char* MAIN_MENU_OPTIONS[] = { "JUGAR", "CÓMO JUGAR", "CONFIGURACIÓN", "CRÉDITOS" };
+    constexpr const char* MAIN_MENU_OPTIONS[] = { "JUGAR", "CÓMO JUGAR", "LIBRO", "CONFIGURACIÓN", "CRÉDITOS" };
     constexpr int MAIN_MENU_OPTION_COUNT = sizeof(MAIN_MENU_OPTIONS) / sizeof(MAIN_MENU_OPTIONS[0]);
 
     // Sin pista del código Konami: secreto de verdad, que lo descubran.
@@ -201,6 +201,47 @@ namespace
         "B PARA VOLVER",
     };
     constexpr int HELP_LINE_COUNT = sizeof(HELP_LINES) / sizeof(HELP_LINES[0]);
+
+    // La microhistoria: tres escenas que se viven durante el descenso
+    // (intro al primer JUGAR, al abrirse la cripta, al vencer al BOSS) y
+    // quedan coleccionadas en el LIBRO para releerlas.
+    constexpr int SCENE_COUNT = 3;
+    constexpr int SCENE_LINE_COUNT = 9;
+    constexpr const char* SCENE_LINES[SCENE_COUNT][SCENE_LINE_COUNT] = {
+        {
+            "I. EL DESCENSO",
+            "",
+            "EL ABISMO LATE DESDE",
+            "HACE MIL AÑOS. ANOCHE",
+            "TU PERRITO CAYÓ EN ÉL.",
+            "SOLO QUIEN GOLPEA A",
+            "SU COMPÁS PUEDE BAJAR.",
+            "",
+            "A CONTINUAR",
+        },
+        {
+            "II. EL RASTRO",
+            "",
+            "HUELLAS FRESCAS BAJAN",
+            "HACIA LA CRIPTA.",
+            "EL LATIDO SE ACELERA:",
+            "EL ABISMO YA SABE",
+            "QUE VIENES POR ÉL.",
+            "",
+            "A CONTINUAR",
+        },
+        {
+            "III. EL REENCUENTRO",
+            "",
+            "EL CORAZÓN SE CALMA.",
+            "LAS CRIATURAS DESPIERTAN",
+            "Y BAILAN LIBRES.",
+            "UN LADRIDO CONOCIDO...",
+            "¡GUAU! ¡GUAU!",
+            "",
+            "A CONTINUAR",
+        },
+    };
 
     constexpr const char* CREDITS_LINES[] = {
         "UN JUEGO DE PIPETBOY",
@@ -218,9 +259,9 @@ namespace
     // Récord por canción y dificultad, persistido en SRAM. magic detecta la
     // primera vez que corre el juego en un cartucho/batería nueva (SRAM sin
     // inicializar, basura de fábrica) para no mostrar un récord falso.
-    // 56: se sumaron music_volume/sfx_volume al layout — el magic nuevo
-    // descarta saves viejos.
-    constexpr int SAVE_MAGIC = 0x474F4C56;
+    // 57: se sumó scenes_seen al layout — el magic nuevo descarta saves
+    // viejos.
+    constexpr int SAVE_MAGIC = 0x474F4C57;
 
     // Tope del ajuste de latencia, en frames (~17 ms cada uno).
     constexpr int LATENCY_LIMIT = 15;
@@ -235,6 +276,7 @@ namespace
         int konami;  // easter egg: 1 = todo desbloqueado
         int music_volume; // 0..10 (décimas)
         int sfx_volume;   // 0..10 (décimas)
+        int scenes_seen[SCENE_COUNT]; // 1 = escena vivida (visible en el LIBRO)
     };
 
     bn::fixed_point lane_direction(lane ln)
@@ -356,6 +398,8 @@ enum class game_phase
     how_to_play,
     settings,
     paused,
+    book,
+    scene,
 };
 
 int main()
@@ -380,6 +424,10 @@ int main()
         save.konami = 0;
         save.music_volume = 10;
         save.sfx_volume = 10;
+        for (int s = 0; s < SCENE_COUNT; ++s)
+        {
+            save.scenes_seen[s] = 0;
+        }
         bn::sram::write(save);
     }
 
@@ -521,7 +569,8 @@ int main()
         for (int k = 0; k < MAIN_MENU_OPTION_COUNT; ++k)
         {
             main_menu_line[k].clear();
-            bn::fixed y = -10 + k * 18;
+            // Interlineado 16 desde -16: con LIBRO son 5 opciones.
+            bn::fixed y = -16 + k * 16;
             // La opción elegida la marca la tarjeta de cursor; el texto
             // seleccionado se corre un pelo, como las tarjetas de osu.
             text_generator.generate(k == main_menu_cursor ? -38 : -42, y,
@@ -569,6 +618,54 @@ int main()
         for (int i = 0; i < HELP_LINE_COUNT; ++i)
         {
             help_text[i].clear();
+        }
+    };
+
+    // LIBRO: índice de escenas vividas (??? las pendientes) y visor de
+    // una escena, que también se usa cuando la historia avanza en vivo.
+    bn::vector<bn::sprite_ptr, 28> book_text[SCENE_COUNT + 2];
+    bn::vector<bn::sprite_ptr, 28> scene_text[SCENE_LINE_COUNT];
+    int book_cursor = 0;
+    int scene_index = 0;
+    bool scene_from_book = false;
+
+    const auto draw_book = [&]()
+    {
+        book_text[0].clear();
+        text_generator.generate(-74, -48, "EL LIBRO DEL ABISMO", book_text[0]);
+        for (int s = 0; s < SCENE_COUNT; ++s)
+        {
+            book_text[1 + s].clear();
+            const char* label = save.scenes_seen[s] ? SCENE_LINES[s][0] : "???";
+            text_generator.generate(s == book_cursor ? -50 : -54, -20 + s * 20,
+                    label, book_text[1 + s]);
+        }
+        book_text[SCENE_COUNT + 1].clear();
+        text_generator.generate(-74, 48, "A VER - B VOLVER", book_text[SCENE_COUNT + 1]);
+    };
+
+    const auto clear_book = [&]()
+    {
+        for (int i = 0; i < SCENE_COUNT + 2; ++i)
+        {
+            book_text[i].clear();
+        }
+    };
+
+    const auto draw_scene = [&]()
+    {
+        for (int i = 0; i < SCENE_LINE_COUNT; ++i)
+        {
+            scene_text[i].clear();
+            text_generator.generate(-74, -56 + i * 14, SCENE_LINES[scene_index][i], scene_text[i]);
+        }
+    };
+
+    const auto clear_scene = [&]()
+    {
+        for (int i = 0; i < SCENE_LINE_COUNT; ++i)
+        {
+            scene_text[i].clear();
         }
     };
 
@@ -966,6 +1063,45 @@ int main()
         return (tier_counts[0] * 100 + tier_counts[1] * 70 + tier_counts[2] * 40) / resolved;
     };
 
+    // Muestra la primera escena pendiente cuya condición ya se cumplió
+    // (y la marca vivida). Devuelve true si tomó el control de la pantalla.
+    const auto maybe_show_scene = [&]()
+    {
+        for (int s = 0; s < SCENE_COUNT; ++s)
+        {
+            if (save.scenes_seen[s])
+            {
+                continue;
+            }
+            bool available = s == 0; // I: el primer JUGAR
+            if (s == 1)
+            {
+                available = song_unlocked(5, 0); // II: se abre la cripta
+            }
+            else if (s == 2)
+            {
+                for (int d = 0; d < DIFFICULTY_COUNT; ++d)
+                {
+                    if (save.ranks[BOSS_SONG_INDEX][d] > 0)
+                    {
+                        available = true; // III: el BOSS cayó
+                    }
+                }
+            }
+            if (available)
+            {
+                save.scenes_seen[s] = 1;
+                bn::sram::write(save);
+                scene_index = s;
+                scene_from_book = false;
+                draw_scene();
+                phase = game_phase::scene;
+                return true;
+            }
+        }
+        return false;
+    };
+
     const auto resolve_hit = [&](active_note& note, const score_tier& tier)
     {
         tier_counts[tier.count_index] += 1;
@@ -1112,10 +1248,14 @@ int main()
 
                 if (main_menu_cursor == 0)
                 {
-                    draw_title();
-                    draw_menu();
-                    preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                    phase = game_phase::song_select;
+                    // La primera vez, la historia abre el descenso.
+                    if (!maybe_show_scene())
+                    {
+                        draw_title();
+                        draw_menu();
+                        preview_pending_at = frame + PREVIEW_DEBOUNCE;
+                        phase = game_phase::song_select;
+                    }
                 }
                 else
                 {
@@ -1130,6 +1270,12 @@ int main()
                     }
                     else if (main_menu_cursor == 2)
                     {
+                        book_cursor = 0;
+                        draw_book();
+                        phase = game_phase::book;
+                    }
+                    else if (main_menu_cursor == 3)
+                    {
                         settings_cursor = 0;
                         draw_settings();
                         phase = game_phase::settings;
@@ -1139,6 +1285,60 @@ int main()
                         draw_credits();
                         phase = game_phase::credits;
                     }
+                }
+            }
+        }
+        else if (phase == game_phase::book)
+        {
+            if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+            {
+                int delta = bn::keypad::up_pressed() ? -1 : 1;
+                book_cursor = (book_cursor + SCENE_COUNT + delta) % SCENE_COUNT;
+                draw_book();
+                play_sfx(bn::sound_items::sfx_menu_move);
+            }
+            else if (bn::keypad::a_pressed() || bn::keypad::start_pressed())
+            {
+                if (save.scenes_seen[book_cursor])
+                {
+                    clear_book();
+                    scene_index = book_cursor;
+                    scene_from_book = true;
+                    draw_scene();
+                    phase = game_phase::scene;
+                    play_sfx(bn::sound_items::sfx_menu_select);
+                }
+                else
+                {
+                    play_sfx(bn::sound_items::sfx_miss); // aún no vivida
+                }
+            }
+            else if (bn::keypad::b_pressed())
+            {
+                clear_book();
+                draw_main_menu();
+                phase = game_phase::main_menu;
+                play_sfx(bn::sound_items::sfx_menu_select);
+            }
+        }
+        else if (phase == game_phase::scene)
+        {
+            if (bn::keypad::a_pressed() || bn::keypad::start_pressed() || bn::keypad::b_pressed())
+            {
+                clear_scene();
+                play_sfx(bn::sound_items::sfx_menu_select);
+                if (scene_from_book)
+                {
+                    draw_book();
+                    phase = game_phase::book;
+                }
+                else
+                {
+                    // La escena vino de la progresión: sigue al selector.
+                    draw_title();
+                    draw_menu();
+                    preview_pending_at = frame + PREVIEW_DEBOUNCE;
+                    phase = game_phase::song_select;
                 }
             }
         }
@@ -1382,11 +1582,15 @@ int main()
                 {
                     score_text.clear();
                     combo_text.clear();
-                    draw_title();
-                    draw_menu();
-                    preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                    phase = game_phase::song_select;
                     play_menu_music();
+                    // La historia puede avanzar acá (cripta abierta, BOSS caído).
+                    if (!maybe_show_scene())
+                    {
+                        draw_title();
+                        draw_menu();
+                        preview_pending_at = frame + PREVIEW_DEBOUNCE;
+                        phase = game_phase::song_select;
+                    }
                 }
             }
         }
@@ -1756,7 +1960,11 @@ int main()
             bool cursor_visible = true;
             if (phase == game_phase::main_menu)
             {
-                cursor_target = -10 + main_menu_cursor * 18;
+                cursor_target = -16 + main_menu_cursor * 16;
+            }
+            else if (phase == game_phase::book)
+            {
+                cursor_target = -20 + book_cursor * 20;
             }
             else if (phase == game_phase::song_select)
             {
@@ -1799,8 +2007,10 @@ int main()
         }
 
         // El héroe-mascota estorba en el selector (la estrella es el bicho
-        // de cada canción) y en CÓMO JUGAR (los iconos ya ilustran).
-        if (phase == game_phase::song_select || phase == game_phase::how_to_play)
+        // de cada canción), en CÓMO JUGAR (los iconos ya ilustran) y en
+        // las escenas (el texto llega hasta su zona).
+        if (phase == game_phase::song_select || phase == game_phase::how_to_play
+                || phase == game_phase::scene)
         {
             hero_sprite.set_visible(false);
         }
