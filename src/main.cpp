@@ -147,7 +147,14 @@ namespace
         const char* name;
         bn::music_item music;
         bn::color zone_color;
-        int frames_per_beat; // 60/tempo del .it * 59.7275 fps
+        int frames_per_beat; // redondeado: para pulsos/animaciones (jitter de
+                              // 1 frame ahí es imperceptible y necesitan int
+                              // para % y / de todos modos)
+        bn::fixed frames_per_beat_exact; // preciso (60/tempo del .it *
+                              // 59.7275 fps): para el reloj acumulativo de
+                              // notas — redondear esto por canción causaba
+                              // drift creciente en canciones largas (hasta
+                              // ~40 frames al final de un chart de 120 beats)
         int enemy_set;
         int hero;
     };
@@ -164,16 +171,18 @@ namespace
     // enemy_set/hero dan identidad por zona: 0 = mazmorra (bat/rat/
     // skeleton/slime, ninja), 1 = pradera (bichos, elfo), 2 = cripta
     // (calavera/fantasma, ninja). Ver ENEMY_SETS y HEROES más abajo.
+    // frames_per_beat_exact = 60/BPM*59.7275 sin redondear: 125->28.6692,
+    // 200->17.91825, 150->23.891, 80->44.795625.
     constexpr song_info SONG_LIST[] = {
-        { "BATTLE", bn::music_items::battle_clean, bn::color(10, 6, 4), 29, 0, 0 },
-        { "DOGGO", bn::music_items::doggo_clean, bn::color(4, 12, 5), 29, 1, 1 },
-        { "PUPPYLAND", bn::music_items::puppyland_clean, bn::color(5, 7, 11), 29, 1, 1 },
-        { "FOREST", bn::music_items::forest_clean, bn::color(3, 10, 4), 29, 1, 1 },
-        { "GLIMMER", bn::music_items::glimmer_clean, bn::color(9, 9, 2), 18, 0, 0 },
-        { "HIDEOUT", bn::music_items::hideout_clean, bn::color(7, 7, 7), 29, 2, 0 },
-        { "PRISON", bn::music_items::prison_clean, bn::color(8, 3, 3), 24, 2, 0 },
-        { "VICTORY", bn::music_items::victory_clean, bn::color(11, 9, 3), 45, 0, 1 },
-        { "BOSS", bn::music_items::minor_boss_r, bn::color(9, 2, 2), 18, 2, 0 },
+        { "BATTLE", bn::music_items::battle_clean, bn::color(10, 6, 4), 29, 28.6692, 0, 0 },
+        { "DOGGO", bn::music_items::doggo_clean, bn::color(4, 12, 5), 29, 28.6692, 1, 1 },
+        { "PUPPYLAND", bn::music_items::puppyland_clean, bn::color(5, 7, 11), 29, 28.6692, 1, 1 },
+        { "FOREST", bn::music_items::forest_clean, bn::color(3, 10, 4), 29, 28.6692, 1, 1 },
+        { "GLIMMER", bn::music_items::glimmer_clean, bn::color(9, 9, 2), 18, 17.91825, 0, 0 },
+        { "HIDEOUT", bn::music_items::hideout_clean, bn::color(7, 7, 7), 29, 28.6692, 2, 0 },
+        { "PRISON", bn::music_items::prison_clean, bn::color(8, 3, 3), 24, 23.891, 2, 0 },
+        { "VICTORY", bn::music_items::victory_clean, bn::color(11, 9, 3), 45, 44.795625, 0, 1 },
+        { "BOSS", bn::music_items::minor_boss_r, bn::color(9, 2, 2), 18, 17.91825, 2, 0 },
     };
     constexpr int SONG_LIST_COUNT = sizeof(SONG_LIST) / sizeof(SONG_LIST[0]);
     constexpr int VISIBLE_SONGS = 4;
@@ -996,7 +1005,13 @@ int main()
     int selected_song_index = 0;
     int selected_difficulty = 1;
     // Tempo de la canción en curso (reset_game los pone desde SONG_LIST).
+    // frames_per_beat (redondeado) es para pulsos/animaciones; el cálculo
+    // de hit_frame/hold_end_frame usa frames_per_beat_exact para no
+    // acumular drift a lo largo de canciones largas (punto 2a de la
+    // auditoría: redondear por beat componía hasta ~40 frames de atraso
+    // al final de un chart de 120 beats).
     int frames_per_beat = 29;
+    bn::fixed frames_per_beat_exact = 28.6692;
     int approach_frames = frames_per_beat * 3;
     int lead_in_frames = approach_frames;
     int frame = 0;
@@ -1047,6 +1062,7 @@ int main()
         judgement_until = 0;
         judgement_text.clear();
         frames_per_beat = SONG_LIST[selected_song_index].frames_per_beat;
+        frames_per_beat_exact = SONG_LIST[selected_song_index].frames_per_beat_exact;
         approach_frames = frames_per_beat * 3;
         lead_in_frames = approach_frames;
         // El BOSS juega un escalón más arriba de lo elegido; en MUY
@@ -1702,16 +1718,24 @@ int main()
         }
         else
         {
+            // hit_frame en bn::fixed y redondeado recién al final (en vez de
+            // "beat * frames_per_beat" entero): evita que el redondeo de
+            // frames_per_beat por canción se acumule beat a beat — sin esto,
+            // un chart de 120 beats podía terminar hasta ~40 frames
+            // desincronizado del audio real.
             while (next_chart_index < current_chart.size() && !active_notes.full() &&
-                   lead_in_frames + current_chart[next_chart_index].beat * frames_per_beat - frame <= approach_frames)
+                   (bn::fixed(lead_in_frames) + bn::fixed(current_chart[next_chart_index].beat)
+                           * frames_per_beat_exact).round_integer() - frame <= approach_frames)
             {
                 const chart_note& note = current_chart[next_chart_index];
                 active_note active{};
                 active.chart_index = next_chart_index;
                 active.ln = note.ln;
                 active.type = note.type;
-                active.hit_frame = lead_in_frames + note.beat * frames_per_beat;
-                active.hold_end_frame = active.hit_frame + note.hold_beats * frames_per_beat;
+                active.hit_frame = (bn::fixed(lead_in_frames) + bn::fixed(note.beat)
+                        * frames_per_beat_exact).round_integer();
+                active.hold_end_frame = active.hit_frame
+                        + (bn::fixed(note.hold_beats) * frames_per_beat_exact).round_integer();
                 const bn::sprite_item& enemy_item = note.type == enemy_type::heart
                         ? bn::sprite_items::heart_pickup
                         : lane_sprite_item(note.ln, SONG_LIST[selected_song_index].enemy_set);
