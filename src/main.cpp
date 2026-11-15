@@ -1244,425 +1244,480 @@ int main()
         }
     };
 
-    while (true)
+    // Cada fase del juego vive en su propia lambda nombrada (mismo
+    // patrón [&] que reset_game/resolve_hit/etc. más arriba), para que
+    // el bucle principal no sea una sola función de ~800 líneas. Pura
+    // reubicación de texto: misma captura por referencia, mismo orden
+    // de ejecución, cero cambio de comportamiento.
+    const auto handle_main_menu_phase = [&]()
     {
-        if (phase == game_phase::main_menu)
+        // Easter egg: el código Konami (arriba arriba abajo abajo izq
+        // der izq der B A) desbloquea todas las canciones en todas las
+        // dificultades. Se chequea primero para poder consumir la A
+        // final sin que active la opción del menú; los arriba/abajo
+        // intermedios mueven el cursor igual (y quedan donde estaban).
+        bool konami_done = false;
         {
-            // Easter egg: el código Konami (arriba arriba abajo abajo izq
-            // der izq der B A) desbloquea todas las canciones en todas las
-            // dificultades. Se chequea primero para poder consumir la A
-            // final sin que active la opción del menú; los arriba/abajo
-            // intermedios mueven el cursor igual (y quedan donde estaban).
-            bool konami_done = false;
+            constexpr int KONAMI_SEQ[] = { 0, 0, 1, 1, 2, 3, 2, 3, 4, 5 };
+            int pressed = bn::keypad::up_pressed() ? 0
+                    : bn::keypad::down_pressed() ? 1
+                    : bn::keypad::left_pressed() ? 2
+                    : bn::keypad::right_pressed() ? 3
+                    : bn::keypad::b_pressed() ? 4
+                    : bn::keypad::a_pressed() ? 5 : -1;
+            if (pressed >= 0)
             {
-                constexpr int KONAMI_SEQ[] = { 0, 0, 1, 1, 2, 3, 2, 3, 4, 5 };
-                int pressed = bn::keypad::up_pressed() ? 0
-                        : bn::keypad::down_pressed() ? 1
-                        : bn::keypad::left_pressed() ? 2
-                        : bn::keypad::right_pressed() ? 3
-                        : bn::keypad::b_pressed() ? 4
-                        : bn::keypad::a_pressed() ? 5 : -1;
-                if (pressed >= 0)
+                if (pressed == KONAMI_SEQ[konami_progress])
                 {
-                    if (pressed == KONAMI_SEQ[konami_progress])
-                    {
-                        ++konami_progress;
-                    }
-                    else
-                    {
-                        konami_progress = pressed == KONAMI_SEQ[0] ? 1 : 0;
-                    }
-                    if (konami_progress == 10)
-                    {
-                        konami_progress = 0;
-                        konami_done = true;
-                    }
-                }
-            }
-
-            if (konami_done)
-            {
-                if (!save.konami)
-                {
-                    save.konami = 1;
-                    bn::sram::write(save);
-                }
-                play_sfx(bn::sound_items::sfx_hit);
-            }
-            else if (bn::keypad::up_pressed())
-            {
-                main_menu_cursor = (main_menu_cursor + MAIN_MENU_OPTION_COUNT - 1) % MAIN_MENU_OPTION_COUNT;
-                draw_main_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::down_pressed())
-            {
-                main_menu_cursor = (main_menu_cursor + 1) % MAIN_MENU_OPTION_COUNT;
-                draw_main_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            // A confirma igual que START en todos los menús (en consola real
-            // es el botón natural de "aceptar"); jugando, A queda reservado.
-            else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
-            {
-                for (int k = 0; k < MAIN_MENU_OPTION_COUNT; ++k)
-                {
-                    main_menu_line[k].clear();
-                }
-                play_sfx(bn::sound_items::sfx_menu_select);
-
-                if (main_menu_cursor == 0)
-                {
-                    // La primera vez, la historia abre el descenso.
-                    if (!maybe_show_scene())
-                    {
-                        draw_title();
-                        draw_menu();
-                        preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                        phase = game_phase::song_select;
-                    }
+                    ++konami_progress;
                 }
                 else
                 {
-                    // Sin título en ayuda/créditos: su línea choca con la
-                    // primera de texto.
-                    title_line1.clear();
-                    title_line2.clear();
-                    if (main_menu_cursor == 1)
-                    {
-                        draw_help();
-                        phase = game_phase::how_to_play;
-                    }
-                    else if (main_menu_cursor == 2)
-                    {
-                        book_cursor = 0;
-                        draw_book();
-                        phase = game_phase::book;
-                    }
-                    else if (main_menu_cursor == 3)
-                    {
-                        settings_cursor = 0;
-                        draw_settings();
-                        phase = game_phase::settings;
-                    }
-                    else
-                    {
-                        draw_credits();
-                        phase = game_phase::credits;
-                    }
+                    konami_progress = pressed == KONAMI_SEQ[0] ? 1 : 0;
+                }
+                if (konami_progress == 10)
+                {
+                    konami_progress = 0;
+                    konami_done = true;
                 }
             }
         }
-        else if (phase == game_phase::book)
+
+        if (konami_done)
         {
-            if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+            if (!save.konami)
             {
-                int delta = bn::keypad::up_pressed() ? -1 : 1;
-                book_cursor = (book_cursor + SCENE_COUNT + delta) % SCENE_COUNT;
-                draw_book();
-                play_sfx(bn::sound_items::sfx_menu_move);
+                save.konami = 1;
+                bn::sram::write(save);
             }
-            else if (bn::keypad::a_pressed() || bn::keypad::start_pressed())
-            {
-                if (save.scenes_seen[book_cursor])
-                {
-                    clear_book();
-                    scene_index = book_cursor;
-                    scene_from_book = true;
-                    draw_scene();
-                    scene_box_start = frame;
-                    phase = game_phase::scene;
-                    play_sfx(bn::sound_items::sfx_menu_select);
-                }
-                else
-                {
-                    play_sfx(bn::sound_items::sfx_miss); // aún no vivida
-                }
-            }
-            else if (bn::keypad::b_pressed())
-            {
-                clear_book();
-                draw_main_menu();
-                phase = game_phase::main_menu;
-                play_sfx(bn::sound_items::sfx_menu_select);
-            }
+            play_sfx(bn::sound_items::sfx_hit);
         }
-        else if (phase == game_phase::scene)
+        else if (bn::keypad::up_pressed())
         {
-            const char* dialog_line1 = SCENE_BOXES[scene_index][scene_box][0];
-            const char* dialog_line2 = SCENE_BOXES[scene_index][scene_box][1];
-            int line1_bytes = int(bn::string_view(dialog_line1).size());
-            int total_bytes = line1_bytes + int(bn::string_view(dialog_line2).size());
-            int shown = (frame - scene_box_start) / 2;
-            if (shown > total_bytes)
+            main_menu_cursor = (main_menu_cursor + MAIN_MENU_OPTION_COUNT - 1) % MAIN_MENU_OPTION_COUNT;
+            draw_main_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::down_pressed())
+        {
+            main_menu_cursor = (main_menu_cursor + 1) % MAIN_MENU_OPTION_COUNT;
+            draw_main_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        // A confirma igual que START en todos los menús (en consola real
+        // es el botón natural de "aceptar"); jugando, A queda reservado.
+        else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
+        {
+            for (int k = 0; k < MAIN_MENU_OPTION_COUNT; ++k)
             {
-                shown = total_bytes;
+                main_menu_line[k].clear();
             }
+            play_sfx(bn::sound_items::sfx_menu_select);
 
-            bool advance = bn::keypad::a_pressed() || bn::keypad::start_pressed();
-            if (advance && shown < total_bytes)
+            if (main_menu_cursor == 0)
             {
-                // Primer A: completa la caja de golpe.
-                scene_box_start = frame - total_bytes * 2;
-                shown = total_bytes;
-                advance = false;
-                scene_shown_chars = -1;
-            }
-
-            if (bn::keypad::b_pressed() || (advance && scene_box + 1 >= SCENE_BOX_COUNT))
-            {
-                clear_scene();
-                play_sfx(bn::sound_items::sfx_menu_select);
-                if (scene_from_book)
+                // La primera vez, la historia abre el descenso.
+                if (!maybe_show_scene())
                 {
-                    draw_book();
-                    phase = game_phase::book;
-                }
-                else
-                {
-                    // La escena vino de la progresión: sigue al selector.
                     draw_title();
                     draw_menu();
                     preview_pending_at = frame + PREVIEW_DEBOUNCE;
                     phase = game_phase::song_select;
                 }
             }
-            else if (advance)
+            else
             {
-                ++scene_box;
-                scene_box_start = frame;
-                scene_shown_chars = -1;
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (shown != scene_shown_chars)
-            {
-                // Máquina de escribir: medio carácter por frame.
-                scene_shown_chars = shown;
-                scene_dialog_text[0].clear();
-                scene_dialog_text[1].clear();
-                scene_prompt_text.clear();
-                int first = shown < line1_bytes ? shown : line1_bytes;
-                text_generator.generate(-64, 36, utf8_prefix(dialog_line1, first), scene_dialog_text[0]);
-                if (shown > line1_bytes)
-                {
-                    text_generator.generate(-64, 54, utf8_prefix(dialog_line2, shown - line1_bytes),
-                            scene_dialog_text[1]);
-                }
-                if (shown == total_bytes)
-                {
-                    text_generator.generate(84, 62, "A", scene_prompt_text);
-                }
-            }
-        }
-        else if (phase == game_phase::settings)
-        {
-            if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
-            {
-                int delta = bn::keypad::up_pressed() ? -1 : 1;
-                settings_cursor = (settings_cursor + SETTINGS_OPTION_COUNT + delta) % SETTINGS_OPTION_COUNT;
-                draw_settings();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::left_pressed() || bn::keypad::right_pressed())
-            {
-                int delta = bn::keypad::left_pressed() ? -1 : 1;
-                if (settings_cursor == 0)
-                {
-                    int adjusted = save.latency + delta;
-                    if (adjusted >= -LATENCY_LIMIT && adjusted <= LATENCY_LIMIT)
-                    {
-                        save.latency = adjusted;
-                        play_sfx(bn::sound_items::sfx_menu_move);
-                    }
-                }
-                else if (settings_cursor == 1)
-                {
-                    int adjusted = save.music_volume + delta;
-                    if (adjusted >= 0 && adjusted <= 10)
-                    {
-                        save.music_volume = adjusted;
-                        // En vivo: el tema de menú cambia de volumen ya.
-                        bn::music::set_volume(bn::fixed(adjusted) / 10);
-                        play_sfx(bn::sound_items::sfx_menu_move);
-                    }
-                }
-                else
-                {
-                    int adjusted = save.sfx_volume + delta;
-                    if (adjusted >= 0 && adjusted <= 10)
-                    {
-                        save.sfx_volume = adjusted;
-                        // La prueba en vivo es el propio golpe.
-                        play_sfx(bn::sound_items::sfx_hit);
-                    }
-                }
-                draw_settings();
-            }
-            else if (bn::keypad::b_pressed())
-            {
-                clear_settings();
-                bn::sram::write(save);
-                draw_main_menu();
-                phase = game_phase::main_menu;
-                play_sfx(bn::sound_items::sfx_menu_select);
-            }
-        }
-        else if (phase == game_phase::credits || phase == game_phase::how_to_play)
-        {
-            if (bn::keypad::b_pressed())
-            {
-                if (phase == game_phase::credits)
-                {
-                    clear_credits();
-                }
-                else
-                {
-                    clear_help();
-                }
-                draw_main_menu();
-                phase = game_phase::main_menu;
-                play_sfx(bn::sound_items::sfx_menu_select);
-            }
-        }
-        else if (phase == game_phase::song_select)
-        {
-            if (bn::keypad::up_pressed())
-            {
-                menu_song = (menu_song + SONG_LIST_COUNT - 1) % SONG_LIST_COUNT;
-                preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                draw_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::down_pressed())
-            {
-                menu_song = (menu_song + 1) % SONG_LIST_COUNT;
-                preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                draw_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::l_pressed())
-            {
-                menu_difficulty = (menu_difficulty + DIFFICULTY_COUNT - 1) % DIFFICULTY_COUNT;
-                draw_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::r_pressed())
-            {
-                menu_difficulty = (menu_difficulty + 1) % DIFFICULTY_COUNT;
-                draw_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::b_pressed())
-            {
-                clear_song_select();
+                // Sin título en ayuda/créditos: su línea choca con la
+                // primera de texto.
                 title_line1.clear();
-                if (preview_song >= 0)
+                title_line2.clear();
+                if (main_menu_cursor == 1)
                 {
-                    play_menu_music();
-                    preview_song = -1;
+                    draw_help();
+                    phase = game_phase::how_to_play;
                 }
-                preview_pending_at = 0;
-                draw_main_menu();
-                phase = game_phase::main_menu;
-                play_sfx(bn::sound_items::sfx_menu_select);
-            }
-            else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
-            {
-                if (!song_unlocked(menu_song, menu_difficulty))
+                else if (main_menu_cursor == 2)
                 {
-                    // Bloqueada en esta dificultad: hay que ganársela.
-                    play_sfx(bn::sound_items::sfx_miss);
+                    book_cursor = 0;
+                    draw_book();
+                    phase = game_phase::book;
+                }
+                else if (main_menu_cursor == 3)
+                {
+                    settings_cursor = 0;
+                    draw_settings();
+                    phase = game_phase::settings;
                 }
                 else
                 {
-                    title_line1.clear();
-                    title_line2.clear();
-                    clear_song_select();
-                    preview_song = -1;
-                    preview_pending_at = 0;
-                    selected_song_index = menu_song;
-                    selected_difficulty = menu_difficulty;
-                    reset_game();
-                    phase = game_phase::playing;
-                    play_sfx(bn::sound_items::sfx_menu_select);
+                    draw_credits();
+                    phase = game_phase::credits;
                 }
             }
+        }
+    };
 
-            // Preview: pasado el debounce suena la canción resaltada (si
-            // está desbloqueada) y a los ~10 segundos vuelve el tema de menú.
-            if (preview_pending_at != 0 && frame >= preview_pending_at)
+    const auto handle_book_phase = [&]()
+    {
+        if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+        {
+            int delta = bn::keypad::up_pressed() ? -1 : 1;
+            book_cursor = (book_cursor + SCENE_COUNT + delta) % SCENE_COUNT;
+            draw_book();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::a_pressed() || bn::keypad::start_pressed())
+        {
+            if (save.scenes_seen[book_cursor])
             {
-                preview_pending_at = 0;
-                if (song_unlocked(menu_song, 0))
+                clear_book();
+                scene_index = book_cursor;
+                scene_from_book = true;
+                draw_scene();
+                scene_box_start = frame;
+                phase = game_phase::scene;
+                play_sfx(bn::sound_items::sfx_menu_select);
+            }
+            else
+            {
+                play_sfx(bn::sound_items::sfx_miss); // aún no vivida
+            }
+        }
+        else if (bn::keypad::b_pressed())
+        {
+            clear_book();
+            draw_main_menu();
+            phase = game_phase::main_menu;
+            play_sfx(bn::sound_items::sfx_menu_select);
+        }
+    };
+
+    const auto handle_scene_phase = [&]()
+    {
+        const char* dialog_line1 = SCENE_BOXES[scene_index][scene_box][0];
+        const char* dialog_line2 = SCENE_BOXES[scene_index][scene_box][1];
+        int line1_bytes = int(bn::string_view(dialog_line1).size());
+        int total_bytes = line1_bytes + int(bn::string_view(dialog_line2).size());
+        int shown = (frame - scene_box_start) / 2;
+        if (shown > total_bytes)
+        {
+            shown = total_bytes;
+        }
+
+        bool advance = bn::keypad::a_pressed() || bn::keypad::start_pressed();
+        if (advance && shown < total_bytes)
+        {
+            // Primer A: completa la caja de golpe.
+            scene_box_start = frame - total_bytes * 2;
+            shown = total_bytes;
+            advance = false;
+            scene_shown_chars = -1;
+        }
+
+        if (bn::keypad::b_pressed() || (advance && scene_box + 1 >= SCENE_BOX_COUNT))
+        {
+            clear_scene();
+            play_sfx(bn::sound_items::sfx_menu_select);
+            if (scene_from_book)
+            {
+                draw_book();
+                phase = game_phase::book;
+            }
+            else
+            {
+                // La escena vino de la progresión: sigue al selector.
+                draw_title();
+                draw_menu();
+                preview_pending_at = frame + PREVIEW_DEBOUNCE;
+                phase = game_phase::song_select;
+            }
+        }
+        else if (advance)
+        {
+            ++scene_box;
+            scene_box_start = frame;
+            scene_shown_chars = -1;
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (shown != scene_shown_chars)
+        {
+            // Máquina de escribir: medio carácter por frame.
+            scene_shown_chars = shown;
+            scene_dialog_text[0].clear();
+            scene_dialog_text[1].clear();
+            scene_prompt_text.clear();
+            int first = shown < line1_bytes ? shown : line1_bytes;
+            text_generator.generate(-64, 36, utf8_prefix(dialog_line1, first), scene_dialog_text[0]);
+            if (shown > line1_bytes)
+            {
+                text_generator.generate(-64, 54, utf8_prefix(dialog_line2, shown - line1_bytes),
+                        scene_dialog_text[1]);
+            }
+            if (shown == total_bytes)
+            {
+                text_generator.generate(84, 62, "A", scene_prompt_text);
+            }
+        }
+    };
+
+    const auto handle_settings_phase = [&]()
+    {
+        if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+        {
+            int delta = bn::keypad::up_pressed() ? -1 : 1;
+            settings_cursor = (settings_cursor + SETTINGS_OPTION_COUNT + delta) % SETTINGS_OPTION_COUNT;
+            draw_settings();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::left_pressed() || bn::keypad::right_pressed())
+        {
+            int delta = bn::keypad::left_pressed() ? -1 : 1;
+            if (settings_cursor == 0)
+            {
+                int adjusted = save.latency + delta;
+                if (adjusted >= -LATENCY_LIMIT && adjusted <= LATENCY_LIMIT)
                 {
-                    if (preview_song != menu_song)
-                    {
-                        bn::music::play(SONG_LIST[menu_song].music, bn::fixed(save.music_volume) / 10, true);
-                        preview_song = menu_song;
-                    }
-                    preview_until = frame + PREVIEW_LENGTH;
-                }
-                else if (preview_song >= 0)
-                {
-                    play_menu_music();
-                    preview_song = -1;
+                    save.latency = adjusted;
+                    play_sfx(bn::sound_items::sfx_menu_move);
                 }
             }
-            if (preview_song >= 0 && frame >= preview_until)
+            else if (settings_cursor == 1)
+            {
+                int adjusted = save.music_volume + delta;
+                if (adjusted >= 0 && adjusted <= 10)
+                {
+                    save.music_volume = adjusted;
+                    // En vivo: el tema de menú cambia de volumen ya.
+                    bn::music::set_volume(bn::fixed(adjusted) / 10);
+                    play_sfx(bn::sound_items::sfx_menu_move);
+                }
+            }
+            else
+            {
+                int adjusted = save.sfx_volume + delta;
+                if (adjusted >= 0 && adjusted <= 10)
+                {
+                    save.sfx_volume = adjusted;
+                    // La prueba en vivo es el propio golpe.
+                    play_sfx(bn::sound_items::sfx_hit);
+                }
+            }
+            draw_settings();
+        }
+        else if (bn::keypad::b_pressed())
+        {
+            clear_settings();
+            bn::sram::write(save);
+            draw_main_menu();
+            phase = game_phase::main_menu;
+            play_sfx(bn::sound_items::sfx_menu_select);
+        }
+    };
+
+    const auto handle_credits_help_phase = [&]()
+    {
+        if (bn::keypad::b_pressed())
+        {
+            if (phase == game_phase::credits)
+            {
+                clear_credits();
+            }
+            else
+            {
+                clear_help();
+            }
+            draw_main_menu();
+            phase = game_phase::main_menu;
+            play_sfx(bn::sound_items::sfx_menu_select);
+        }
+    };
+
+    const auto handle_song_select_phase = [&]()
+    {
+        if (bn::keypad::up_pressed())
+        {
+            menu_song = (menu_song + SONG_LIST_COUNT - 1) % SONG_LIST_COUNT;
+            preview_pending_at = frame + PREVIEW_DEBOUNCE;
+            draw_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::down_pressed())
+        {
+            menu_song = (menu_song + 1) % SONG_LIST_COUNT;
+            preview_pending_at = frame + PREVIEW_DEBOUNCE;
+            draw_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::l_pressed())
+        {
+            menu_difficulty = (menu_difficulty + DIFFICULTY_COUNT - 1) % DIFFICULTY_COUNT;
+            draw_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::r_pressed())
+        {
+            menu_difficulty = (menu_difficulty + 1) % DIFFICULTY_COUNT;
+            draw_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::b_pressed())
+        {
+            clear_song_select();
+            title_line1.clear();
+            if (preview_song >= 0)
+            {
+                play_menu_music();
+                preview_song = -1;
+            }
+            preview_pending_at = 0;
+            draw_main_menu();
+            phase = game_phase::main_menu;
+            play_sfx(bn::sound_items::sfx_menu_select);
+        }
+        else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
+        {
+            if (!song_unlocked(menu_song, menu_difficulty))
+            {
+                // Bloqueada en esta dificultad: hay que ganársela.
+                play_sfx(bn::sound_items::sfx_miss);
+            }
+            else
+            {
+                title_line1.clear();
+                title_line2.clear();
+                clear_song_select();
+                preview_song = -1;
+                preview_pending_at = 0;
+                selected_song_index = menu_song;
+                selected_difficulty = menu_difficulty;
+                reset_game();
+                phase = game_phase::playing;
+                play_sfx(bn::sound_items::sfx_menu_select);
+            }
+        }
+
+        // Preview: pasado el debounce suena la canción resaltada (si
+        // está desbloqueada) y a los ~10 segundos vuelve el tema de menú.
+        if (preview_pending_at != 0 && frame >= preview_pending_at)
+        {
+            preview_pending_at = 0;
+            if (song_unlocked(menu_song, 0))
+            {
+                if (preview_song != menu_song)
+                {
+                    bn::music::play(SONG_LIST[menu_song].music, bn::fixed(save.music_volume) / 10, true);
+                    preview_song = menu_song;
+                }
+                preview_until = frame + PREVIEW_LENGTH;
+            }
+            else if (preview_song >= 0)
             {
                 play_menu_music();
                 preview_song = -1;
             }
         }
-        else if (phase == game_phase::paused)
+        if (preview_song >= 0 && frame >= preview_until)
         {
-            bool start_now = bn::keypad::start_pressed() || bn::keypad::a_pressed();
-            if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+            play_menu_music();
+            preview_song = -1;
+        }
+    };
+
+    const auto handle_paused_phase = [&]()
+    {
+        bool start_now = bn::keypad::start_pressed() || bn::keypad::a_pressed();
+        if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
+        {
+            int delta = bn::keypad::up_pressed() ? -1 : 1;
+            ended_cursor = (ended_cursor + PAUSE_OPTION_COUNT + delta) % PAUSE_OPTION_COUNT;
+            draw_pause_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::b_pressed() || (start_now && ended_cursor == 0))
+        {
+            // Continuar: B es el atajo, START sobre CONTINUAR también.
+            message_text.clear();
+            for (int k = 0; k < PAUSE_OPTION_COUNT; ++k)
             {
-                int delta = bn::keypad::up_pressed() ? -1 : 1;
-                ended_cursor = (ended_cursor + PAUSE_OPTION_COUNT + delta) % PAUSE_OPTION_COUNT;
-                draw_pause_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
+                ended_line[k].clear();
             }
-            else if (bn::keypad::b_pressed() || (start_now && ended_cursor == 0))
+            set_battle_sprites_visible(true);
+            bn::music::resume();
+            phase = game_phase::playing;
+            play_sfx(bn::sound_items::sfx_menu_select);
+        }
+        else if (start_now)
+        {
+            message_text.clear();
+            judgement_text.clear();
+            for (int k = 0; k < PAUSE_OPTION_COUNT; ++k)
             {
-                // Continuar: B es el atajo, START sobre CONTINUAR también.
-                message_text.clear();
-                for (int k = 0; k < PAUSE_OPTION_COUNT; ++k)
-                {
-                    ended_line[k].clear();
-                }
-                set_battle_sprites_visible(true);
-                bn::music::resume();
+                ended_line[k].clear();
+            }
+            bn::music::resume();
+            play_sfx(bn::sound_items::sfx_menu_select);
+            if (ended_cursor == 1)
+            {
+                // Reiniciar el nivel desde cero.
+                reset_game();
                 phase = game_phase::playing;
-                play_sfx(bn::sound_items::sfx_menu_select);
             }
-            else if (start_now)
+            else
             {
-                message_text.clear();
-                judgement_text.clear();
-                for (int k = 0; k < PAUSE_OPTION_COUNT; ++k)
+                // Salir al menú de canciones, limpiando la partida a medias.
+                active_notes.clear();
+                dying_enemies.clear();
+                sparks.clear();
+                score_text.clear();
+                combo_text.clear();
+                hero_sprite.set_visible(true); // en los menús se ve de mascota
+                play_menu_music();
+                draw_title();
+                draw_menu();
+                preview_pending_at = frame + PREVIEW_DEBOUNCE;
+                phase = game_phase::song_select;
+            }
+        }
+    };
+
+    const auto handle_ended_phase = [&]()
+    {
+        if (bn::keypad::up_pressed())
+        {
+            ended_cursor = (ended_cursor + ENDED_OPTION_COUNT - 1) % ENDED_OPTION_COUNT;
+            draw_ended_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::down_pressed())
+        {
+            ended_cursor = (ended_cursor + 1) % ENDED_OPTION_COUNT;
+            draw_ended_menu();
+            play_sfx(bn::sound_items::sfx_menu_move);
+        }
+        else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
+        {
+            message_text.clear();
+            record_banner_text.clear();
+            rank_sprite.set_visible(false);
+            for (int k = 0; k < ENDED_OPTION_COUNT; ++k)
+            {
+                ended_line[k].clear();
+            }
+            play_sfx(bn::sound_items::sfx_menu_select);
+
+            if (ended_cursor == 0)
+            {
+                reset_game();
+                phase = game_phase::playing;
+            }
+            else
+            {
+                score_text.clear();
+                combo_text.clear();
+                play_menu_music();
+                // La historia puede avanzar acá (cripta abierta, BOSS caído).
+                if (!maybe_show_scene())
                 {
-                    ended_line[k].clear();
-                }
-                bn::music::resume();
-                play_sfx(bn::sound_items::sfx_menu_select);
-                if (ended_cursor == 1)
-                {
-                    // Reiniciar el nivel desde cero.
-                    reset_game();
-                    phase = game_phase::playing;
-                }
-                else
-                {
-                    // Salir al menú de canciones, limpiando la partida a medias.
-                    active_notes.clear();
-                    dying_enemies.clear();
-                    sparks.clear();
-                    score_text.clear();
-                    combo_text.clear();
-                    hero_sprite.set_visible(true); // en los menús se ve de mascota
-                    play_menu_music();
                     draw_title();
                     draw_menu();
                     preview_pending_at = frame + PREVIEW_DEBOUNCE;
@@ -1670,357 +1725,352 @@ int main()
                 }
             }
         }
-        else if (phase == game_phase::ended)
-        {
-            if (bn::keypad::up_pressed())
-            {
-                ended_cursor = (ended_cursor + ENDED_OPTION_COUNT - 1) % ENDED_OPTION_COUNT;
-                draw_ended_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::down_pressed())
-            {
-                ended_cursor = (ended_cursor + 1) % ENDED_OPTION_COUNT;
-                draw_ended_menu();
-                play_sfx(bn::sound_items::sfx_menu_move);
-            }
-            else if (bn::keypad::start_pressed() || bn::keypad::a_pressed())
-            {
-                message_text.clear();
-                record_banner_text.clear();
-                rank_sprite.set_visible(false);
-                for (int k = 0; k < ENDED_OPTION_COUNT; ++k)
-                {
-                    ended_line[k].clear();
-                }
-                play_sfx(bn::sound_items::sfx_menu_select);
+    };
 
-                if (ended_cursor == 0)
+    const auto handle_playing_phase = [&]()
+    {
+        // hit_frame en bn::fixed y redondeado recién al final (en vez de
+        // "beat * frames_per_beat" entero): evita que el redondeo de
+        // frames_per_beat por canción se acumule beat a beat — sin esto,
+        // un chart de 120 beats podía terminar hasta ~40 frames
+        // desincronizado del audio real.
+        while (next_chart_index < current_chart.size() && !active_notes.full() &&
+               (bn::fixed(lead_in_frames) + bn::fixed(current_chart[next_chart_index].beat)
+                       * frames_per_beat_exact).round_integer() - frame <= approach_frames)
+        {
+            const chart_note& note = current_chart[next_chart_index];
+            active_note active{};
+            active.chart_index = next_chart_index;
+            active.ln = note.ln;
+            active.type = note.type;
+            active.hit_frame = (bn::fixed(lead_in_frames) + bn::fixed(note.beat)
+                    * frames_per_beat_exact).round_integer();
+            active.hold_end_frame = active.hit_frame
+                    + (bn::fixed(note.hold_beats) * frames_per_beat_exact).round_integer();
+            const bn::sprite_item& enemy_item = note.type == enemy_type::heart
+                    ? bn::sprite_items::heart_pickup
+                    : lane_sprite_item(note.ln, SONG_LIST[selected_song_index].enemy_set);
+            active.sprite = enemy_item.create_sprite(
+                    lane_direction(note.ln) * lane_spawn_distance(note.ln));
+            if (note.type == enemy_type::chain)
+            {
+                for (int t = 0; t < 2; ++t)
                 {
-                    reset_game();
-                    phase = game_phase::playing;
+                    active.trail.push_back(enemy_item.create_sprite(
+                            lane_direction(note.ln) * (lane_spawn_distance(note.ln) + 14 * (t + 1))));
+                }
+            }
+            active_notes.push_back(bn::move(active));
+            ++next_chart_index;
+        }
+
+        // Paso de animación a medio beat: todos los enemigos (y el héroe
+        // en reposo) marchan sincronizados con la música.
+        int anim_step = (frame * 2 / frames_per_beat) % 2;
+
+        // Reloj de juicio con el ajuste de latencia de CONFIGURACION:
+        // solo afecta cuándo se juzgan los golpes, no los visuales.
+        int judge_frame = frame - save.latency;
+
+        int i = 0;
+        while (i < active_notes.size())
+        {
+            active_note& note = active_notes[i];
+            int diff_frames = note.hit_frame - frame;
+            bool remove = false;
+
+            // La ráfaga espera en el anillo hasta que vence su ventana
+            // de mash (hold_end_frame); lo demás, la ventana normal.
+            int deadline = note.type == enemy_type::chain
+                    ? note.hold_end_frame
+                    : note.hit_frame + MISS_FRAMES;
+            if (judge_frame > deadline)
+            {
+                if (note.type == enemy_type::heart)
+                {
+                    // Perder el corazón no castiga: era un premio.
+                    remove = true;
                 }
                 else
-                {
-                    score_text.clear();
-                    combo_text.clear();
-                    play_menu_music();
-                    // La historia puede avanzar acá (cripta abierta, BOSS caído).
-                    if (!maybe_show_scene())
-                    {
-                        draw_title();
-                        draw_menu();
-                        preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                        phase = game_phase::song_select;
-                    }
-                }
-            }
-        }
-        else
-        {
-            // hit_frame en bn::fixed y redondeado recién al final (en vez de
-            // "beat * frames_per_beat" entero): evita que el redondeo de
-            // frames_per_beat por canción se acumule beat a beat — sin esto,
-            // un chart de 120 beats podía terminar hasta ~40 frames
-            // desincronizado del audio real.
-            while (next_chart_index < current_chart.size() && !active_notes.full() &&
-                   (bn::fixed(lead_in_frames) + bn::fixed(current_chart[next_chart_index].beat)
-                           * frames_per_beat_exact).round_integer() - frame <= approach_frames)
-            {
-                const chart_note& note = current_chart[next_chart_index];
-                active_note active{};
-                active.chart_index = next_chart_index;
-                active.ln = note.ln;
-                active.type = note.type;
-                active.hit_frame = (bn::fixed(lead_in_frames) + bn::fixed(note.beat)
-                        * frames_per_beat_exact).round_integer();
-                active.hold_end_frame = active.hit_frame
-                        + (bn::fixed(note.hold_beats) * frames_per_beat_exact).round_integer();
-                const bn::sprite_item& enemy_item = note.type == enemy_type::heart
-                        ? bn::sprite_items::heart_pickup
-                        : lane_sprite_item(note.ln, SONG_LIST[selected_song_index].enemy_set);
-                active.sprite = enemy_item.create_sprite(
-                        lane_direction(note.ln) * lane_spawn_distance(note.ln));
-                if (note.type == enemy_type::chain)
-                {
-                    for (int t = 0; t < 2; ++t)
-                    {
-                        active.trail.push_back(enemy_item.create_sprite(
-                                lane_direction(note.ln) * (lane_spawn_distance(note.ln) + 14 * (t + 1))));
-                    }
-                }
-                active_notes.push_back(bn::move(active));
-                ++next_chart_index;
-            }
-
-            // Paso de animación a medio beat: todos los enemigos (y el héroe
-            // en reposo) marchan sincronizados con la música.
-            int anim_step = (frame * 2 / frames_per_beat) % 2;
-
-            // Reloj de juicio con el ajuste de latencia de CONFIGURACION:
-            // solo afecta cuándo se juzgan los golpes, no los visuales.
-            int judge_frame = frame - save.latency;
-
-            int i = 0;
-            while (i < active_notes.size())
-            {
-                active_note& note = active_notes[i];
-                int diff_frames = note.hit_frame - frame;
-                bool remove = false;
-
-                // La ráfaga espera en el anillo hasta que vence su ventana
-                // de mash (hold_end_frame); lo demás, la ventana normal.
-                int deadline = note.type == enemy_type::chain
-                        ? note.hold_end_frame
-                        : note.hit_frame + MISS_FRAMES;
-                if (judge_frame > deadline)
-                {
-                    if (note.type == enemy_type::heart)
-                    {
-                        // Perder el corazón no castiga: era un premio.
-                        remove = true;
-                    }
-                    else
-                    {
-                        detach_sprite(note, false);
-                        register_miss(note);
-                        remove = true;
-                    }
-                }
-
-                if (remove)
-                {
-                    active_notes.erase(active_notes.begin() + i);
-                    continue;
-                }
-
-                bn::fixed progress = bn::fixed(diff_frames) / approach_frames;
-                if (progress < 0)
-                {
-                    progress = 0;
-                }
-                if (progress > 1)
-                {
-                    progress = 1;
-                }
-
-                bn::fixed distance = HIT_DISTANCE + progress * (lane_spawn_distance(note.ln) - HIT_DISTANCE);
-                const bn::sprite_item& enemy_item = note.type == enemy_type::heart
-                        ? bn::sprite_items::heart_pickup
-                        : lane_sprite_item(note.ln, SONG_LIST[selected_song_index].enemy_set);
-                note.sprite->set_position(lane_direction(note.ln) * distance);
-                if (note.type != enemy_type::heart) // el corazón tiene 1 frame
-                {
-                    // Mirando al centro: los carriles laterales usan el ciclo
-                    // de lado (frames 2-3; el arte mira a la izquierda, así
-                    // que el carril izquierdo se espeja para mirar a la
-                    // derecha). Arriba/abajo usan el ciclo de frente (0-1).
-                    int facing_base = (note.ln == lane::left || note.ln == lane::right) ? 2 : 0;
-                    bool facing_flip = note.ln == lane::left;
-                    note.sprite->set_item(enemy_item, facing_base + anim_step);
-                    note.sprite->set_horizontal_flip(facing_flip);
-
-                    for (int t = 0; t < note.trail.size(); ++t)
-                    {
-                        // Frames alternados a lo largo de la fila: efecto onda.
-                        note.trail[t].set_item(enemy_item, facing_base + (anim_step + t + 1) % 2);
-                        note.trail[t].set_horizontal_flip(facing_flip);
-                    }
-                }
-                style_sprite(*note.sprite, note.type, euphoria_active);
-
-                for (int t = 0; t < note.trail.size(); ++t)
-                {
-                    note.trail[t].set_position(lane_direction(note.ln) * (distance + 14 * (t + 1)));
-                }
-
-                ++i;
-            }
-
-            constexpr lane ALL_LANES[] = { lane::up, lane::down, lane::left, lane::right };
-            for (lane ln : ALL_LANES)
-            {
-                if (!lane_pressed(ln))
-                {
-                    continue;
-                }
-
-                // El arco responde al botón aunque no haya nada que pegar.
-                lane_flash[int(ln)].set_visible(true);
-                lane_flash_until[int(ln)] = frame + 6;
-
-                int best_index = -1;
-                int best_diff = MISS_FRAMES + 1;
-                for (int j = 0; j < active_notes.size(); ++j)
-                {
-                    active_note& note = active_notes[j];
-                    if (note.ln != ln)
-                    {
-                        continue;
-                    }
-
-                    int diff = note.hit_frame - judge_frame;
-                    int abs_diff = diff < 0 ? -diff : diff;
-                    if (note.type == enemy_type::chain)
-                    {
-                        // Ráfaga: elegible desde que entra en ventana hasta
-                        // que vence el plazo de mash, con prioridad total.
-                        if (judge_frame < note.hit_frame - MISS_FRAMES || judge_frame > note.hold_end_frame)
-                        {
-                            continue;
-                        }
-                        abs_diff = 0;
-                    }
-                    if (abs_diff <= MISS_FRAMES && abs_diff < best_diff)
-                    {
-                        best_diff = abs_diff;
-                        best_index = j;
-                    }
-                }
-
-                if (best_index < 0)
-                {
-                    continue;
-                }
-
-                active_note& note = active_notes[best_index];
-
-                if (note.type == enemy_type::chain)
-                {
-                    // Mash estilo Muse Dash: cada toque revienta la unidad
-                    // del frente y las de atrás avanzan; la última paga GREAT.
-                    detach_sprite(note, true);
-                    if (!note.trail.empty())
-                    {
-                        note.sprite = bn::move(note.trail[0]);
-                        note.trail.erase(note.trail.begin());
-                        resolve_hit(note, TAP_TIER);
-                    }
-                    else
-                    {
-                        resolve_hit(note, GREAT_TIER);
-                        active_notes.erase(active_notes.begin() + best_index);
-                    }
-                    continue;
-                }
-
-                bool needs_a = note.type == enemy_type::armored;
-                bool needs_b = note.type == enemy_type::projectile;
-
-                if ((needs_a && !bn::keypad::a_held()) || (needs_b && !bn::keypad::b_held()))
                 {
                     detach_sprite(note, false);
                     register_miss(note);
+                    remove = true;
+                }
+            }
+
+            if (remove)
+            {
+                active_notes.erase(active_notes.begin() + i);
+                continue;
+            }
+
+            bn::fixed progress = bn::fixed(diff_frames) / approach_frames;
+            if (progress < 0)
+            {
+                progress = 0;
+            }
+            if (progress > 1)
+            {
+                progress = 1;
+            }
+
+            bn::fixed distance = HIT_DISTANCE + progress * (lane_spawn_distance(note.ln) - HIT_DISTANCE);
+            const bn::sprite_item& enemy_item = note.type == enemy_type::heart
+                    ? bn::sprite_items::heart_pickup
+                    : lane_sprite_item(note.ln, SONG_LIST[selected_song_index].enemy_set);
+            note.sprite->set_position(lane_direction(note.ln) * distance);
+            if (note.type != enemy_type::heart) // el corazón tiene 1 frame
+            {
+                // Mirando al centro: los carriles laterales usan el ciclo
+                // de lado (frames 2-3; el arte mira a la izquierda, así
+                // que el carril izquierdo se espeja para mirar a la
+                // derecha). Arriba/abajo usan el ciclo de frente (0-1).
+                int facing_base = (note.ln == lane::left || note.ln == lane::right) ? 2 : 0;
+                bool facing_flip = note.ln == lane::left;
+                note.sprite->set_item(enemy_item, facing_base + anim_step);
+                note.sprite->set_horizontal_flip(facing_flip);
+
+                for (int t = 0; t < note.trail.size(); ++t)
+                {
+                    // Frames alternados a lo largo de la fila: efecto onda.
+                    note.trail[t].set_item(enemy_item, facing_base + (anim_step + t + 1) % 2);
+                    note.trail[t].set_horizontal_flip(facing_flip);
+                }
+            }
+            style_sprite(*note.sprite, note.type, euphoria_active);
+
+            for (int t = 0; t < note.trail.size(); ++t)
+            {
+                note.trail[t].set_position(lane_direction(note.ln) * (distance + 14 * (t + 1)));
+            }
+
+            ++i;
+        }
+
+        constexpr lane ALL_LANES[] = { lane::up, lane::down, lane::left, lane::right };
+        for (lane ln : ALL_LANES)
+        {
+            if (!lane_pressed(ln))
+            {
+                continue;
+            }
+
+            // El arco responde al botón aunque no haya nada que pegar.
+            lane_flash[int(ln)].set_visible(true);
+            lane_flash_until[int(ln)] = frame + 6;
+
+            int best_index = -1;
+            int best_diff = MISS_FRAMES + 1;
+            for (int j = 0; j < active_notes.size(); ++j)
+            {
+                active_note& note = active_notes[j];
+                if (note.ln != ln)
+                {
+                    continue;
+                }
+
+                int diff = note.hit_frame - judge_frame;
+                int abs_diff = diff < 0 ? -diff : diff;
+                if (note.type == enemy_type::chain)
+                {
+                    // Ráfaga: elegible desde que entra en ventana hasta
+                    // que vence el plazo de mash, con prioridad total.
+                    if (judge_frame < note.hit_frame - MISS_FRAMES || judge_frame > note.hold_end_frame)
+                    {
+                        continue;
+                    }
+                    abs_diff = 0;
+                }
+                if (abs_diff <= MISS_FRAMES && abs_diff < best_diff)
+                {
+                    best_diff = abs_diff;
+                    best_index = j;
+                }
+            }
+
+            if (best_index < 0)
+            {
+                continue;
+            }
+
+            active_note& note = active_notes[best_index];
+
+            if (note.type == enemy_type::chain)
+            {
+                // Mash estilo Muse Dash: cada toque revienta la unidad
+                // del frente y las de atrás avanzan; la última paga GREAT.
+                detach_sprite(note, true);
+                if (!note.trail.empty())
+                {
+                    note.sprite = bn::move(note.trail[0]);
+                    note.trail.erase(note.trail.begin());
+                    resolve_hit(note, TAP_TIER);
                 }
                 else
                 {
-                    const score_tier& tier = best_diff <= PERFECT_FRAMES ? PERFECT_TIER
-                            : best_diff <= GREAT_FRAMES ? GREAT_TIER : GOOD_TIER;
-                    bool heals = note.type == enemy_type::heart;
-                    detach_sprite(note, true);
-                    resolve_hit(note, tier);
-                    if (heals && hp < HP_CAP)
-                    {
-                        ++hp; // con vida llena da un sexto corazón extra
-                    }
+                    resolve_hit(note, GREAT_TIER);
+                    active_notes.erase(active_notes.begin() + best_index);
                 }
-
-                active_notes.erase(active_notes.begin() + best_index);
+                continue;
             }
 
-            if (euphoria_active && frame > euphoria_ends_frame)
+            bool needs_a = note.type == enemy_type::armored;
+            bool needs_b = note.type == enemy_type::projectile;
+
+            if ((needs_a && !bn::keypad::a_held()) || (needs_b && !bn::keypad::b_held()))
             {
-                euphoria_active = false;
+                detach_sprite(note, false);
+                register_miss(note);
             }
-            // A activa la euforia (L+R sigue sirviendo, pero en una GBA
-            // real tocar los dos hombros a la vez cuesta).
-            else if (!euphoria_active && euphoria_meter >= EUPHORIA_MAX &&
-                     (bn::keypad::a_pressed() || (bn::keypad::l_held() && bn::keypad::r_held())))
+            else
             {
-                euphoria_meter = 0;
-                euphoria_active = true;
-                euphoria_ends_frame = frame + frames_per_beat * EUPHORIA_BEATS;
+                const score_tier& tier = best_diff <= PERFECT_FRAMES ? PERFECT_TIER
+                        : best_diff <= GREAT_FRAMES ? GREAT_TIER : GOOD_TIER;
+                bool heals = note.type == enemy_type::heart;
+                detach_sprite(note, true);
+                resolve_hit(note, tier);
+                if (heals && hp < HP_CAP)
+                {
+                    ++hp; // con vida llena da un sexto corazón extra
+                }
             }
 
-            if (hp <= 0)
-            {
-                phase = game_phase::ended;
-                bn::music::stop();
-                // Sin esto, los enemigos en camino quedaban congelados en
-                // pantalla y seguían visibles por todos los menús hasta la
-                // próxima partida (solo reset_game los limpiaba).
-                active_notes.clear();
-                bool new_record = save_results(false, 0, false);
-                message_text.clear();
-                text_generator.generate(-48, -32, "GAME OVER", message_text);
-                bn::string<20> acc_line = "PRECISIÓN ";
-                acc_line.append(bn::to_string<4>(accuracy_percent()));
-                acc_line.append("%");
-                text_generator.generate(-48, -6, acc_line, message_text);
-                if (new_record)
-                {
-                    text_generator.set_palette_item(RECORD_TEXT_PALETTE);
-                    text_generator.generate(-48, 16, "NUEVO RÉCORD", record_banner_text);
-                    text_generator.set_palette_item(default_text_palette);
-                }
-                ended_cursor = 0;
-                draw_ended_menu();
-            }
-            else if (next_chart_index >= current_chart.size() && active_notes.empty())
-            {
-                phase = game_phase::ended;
-                bn::music::stop();
-                int accuracy = accuracy_percent();
-                int rank_index = accuracy >= 95 ? 4 : accuracy >= 85 ? 3 : accuracy >= 70 ? 2 : 1;
-                bool full_combo = miss_count == 0;
-                bool new_record = save_results(true, rank_index, full_combo);
-                message_text.clear();
-                // Arriba: estado a la izquierda y aviso de récord a la
-                // derecha; al centro el trofeo — la letra de rango gigante.
-                text_generator.generate(-70, -32, "LISTO", message_text);
-                if (new_record)
-                {
-                    text_generator.set_palette_item(RECORD_TEXT_PALETTE);
-                    text_generator.generate(-4, -32, "NUEVO RÉCORD", record_banner_text);
-                    text_generator.set_palette_item(default_text_palette);
-                }
-                text_generator.generate(-58, -2, "RANGO", message_text);
-                rank_sprite.set_item(bn::sprite_items::rank_letters, rank_index - 1);
-                rank_sprite.set_visible(true);
-                if (full_combo)
-                {
-                    text_generator.generate(34, -8, "*", message_text);
-                }
-                bn::string<20> acc_line = "PRECISIÓN ";
-                acc_line.append(bn::to_string<4>(accuracy));
-                acc_line.append("%");
-                text_generator.generate(-48, 22, acc_line, message_text);
-                ended_cursor = 0;
-                draw_ended_menu();
-            }
+            active_notes.erase(active_notes.begin() + best_index);
+        }
 
-            // Pausa al final del frame (si la partida sigue viva): así ningún
-            // otro código de juego corre con la música ya pausada.
-            if (phase == game_phase::playing && bn::keypad::start_pressed())
+        if (euphoria_active && frame > euphoria_ends_frame)
+        {
+            euphoria_active = false;
+        }
+        // A activa la euforia (L+R sigue sirviendo, pero en una GBA
+        // real tocar los dos hombros a la vez cuesta).
+        else if (!euphoria_active && euphoria_meter >= EUPHORIA_MAX &&
+                 (bn::keypad::a_pressed() || (bn::keypad::l_held() && bn::keypad::r_held())))
+        {
+            euphoria_meter = 0;
+            euphoria_active = true;
+            euphoria_ends_frame = frame + frames_per_beat * EUPHORIA_BEATS;
+        }
+
+        if (hp <= 0)
+        {
+            phase = game_phase::ended;
+            bn::music::stop();
+            // Sin esto, los enemigos en camino quedaban congelados en
+            // pantalla y seguían visibles por todos los menús hasta la
+            // próxima partida (solo reset_game los limpiaba).
+            active_notes.clear();
+            bool new_record = save_results(false, 0, false);
+            message_text.clear();
+            text_generator.generate(-48, -32, "GAME OVER", message_text);
+            bn::string<20> acc_line = "PRECISIÓN ";
+            acc_line.append(bn::to_string<4>(accuracy_percent()));
+            acc_line.append("%");
+            text_generator.generate(-48, -6, acc_line, message_text);
+            if (new_record)
             {
-                phase = game_phase::paused;
-                bn::music::pause();
-                // Tarjeta limpia: fuera combate y texto del último juicio.
-                set_battle_sprites_visible(false);
-                dying_enemies.clear();
-                sparks.clear();
-                for (int f = 0; f < 4; ++f)
-                {
-                    lane_flash[f].set_visible(false);
-                    lane_flash_until[f] = 0;
-                }
-                judgement_text.clear();
-                message_text.clear();
-                text_generator.generate(-24, -28, "PAUSA", message_text);
-                ended_cursor = 0;
-                draw_pause_menu();
-                play_sfx(bn::sound_items::sfx_menu_select);
+                text_generator.set_palette_item(RECORD_TEXT_PALETTE);
+                text_generator.generate(-48, 16, "NUEVO RÉCORD", record_banner_text);
+                text_generator.set_palette_item(default_text_palette);
             }
+            ended_cursor = 0;
+            draw_ended_menu();
+        }
+        else if (next_chart_index >= current_chart.size() && active_notes.empty())
+        {
+            phase = game_phase::ended;
+            bn::music::stop();
+            int accuracy = accuracy_percent();
+            int rank_index = accuracy >= 95 ? 4 : accuracy >= 85 ? 3 : accuracy >= 70 ? 2 : 1;
+            bool full_combo = miss_count == 0;
+            bool new_record = save_results(true, rank_index, full_combo);
+            message_text.clear();
+            // Arriba: estado a la izquierda y aviso de récord a la
+            // derecha; al centro el trofeo — la letra de rango gigante.
+            text_generator.generate(-70, -32, "LISTO", message_text);
+            if (new_record)
+            {
+                text_generator.set_palette_item(RECORD_TEXT_PALETTE);
+                text_generator.generate(-4, -32, "NUEVO RÉCORD", record_banner_text);
+                text_generator.set_palette_item(default_text_palette);
+            }
+            text_generator.generate(-58, -2, "RANGO", message_text);
+            rank_sprite.set_item(bn::sprite_items::rank_letters, rank_index - 1);
+            rank_sprite.set_visible(true);
+            if (full_combo)
+            {
+                text_generator.generate(34, -8, "*", message_text);
+            }
+            bn::string<20> acc_line = "PRECISIÓN ";
+            acc_line.append(bn::to_string<4>(accuracy));
+            acc_line.append("%");
+            text_generator.generate(-48, 22, acc_line, message_text);
+            ended_cursor = 0;
+            draw_ended_menu();
+        }
+
+        // Pausa al final del frame (si la partida sigue viva): así ningún
+        // otro código de juego corre con la música ya pausada.
+        if (phase == game_phase::playing && bn::keypad::start_pressed())
+        {
+            phase = game_phase::paused;
+            bn::music::pause();
+            // Tarjeta limpia: fuera combate y texto del último juicio.
+            set_battle_sprites_visible(false);
+            dying_enemies.clear();
+            sparks.clear();
+            for (int f = 0; f < 4; ++f)
+            {
+                lane_flash[f].set_visible(false);
+                lane_flash_until[f] = 0;
+            }
+            judgement_text.clear();
+            message_text.clear();
+            text_generator.generate(-24, -28, "PAUSA", message_text);
+            ended_cursor = 0;
+            draw_pause_menu();
+            play_sfx(bn::sound_items::sfx_menu_select);
+        }
+    };
+
+    while (true)
+    {
+        if (phase == game_phase::main_menu)
+        {
+            handle_main_menu_phase();
+        }
+        else if (phase == game_phase::book)
+        {
+            handle_book_phase();
+        }
+        else if (phase == game_phase::scene)
+        {
+            handle_scene_phase();
+        }
+        else if (phase == game_phase::settings)
+        {
+            handle_settings_phase();
+        }
+        else if (phase == game_phase::credits || phase == game_phase::how_to_play)
+        {
+            handle_credits_help_phase();
+        }
+        else if (phase == game_phase::song_select)
+        {
+            handle_song_select_phase();
+        }
+        else if (phase == game_phase::paused)
+        {
+            handle_paused_phase();
+        }
+        else if (phase == game_phase::ended)
+        {
+            handle_ended_phase();
+        }
+        else
+        {
+            handle_playing_phase();
         }
 
         // Los enemigos "muriendo" siguen animándose aunque la partida termine
