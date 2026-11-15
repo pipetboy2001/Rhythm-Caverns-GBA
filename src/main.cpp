@@ -187,7 +187,7 @@ namespace
     constexpr const char* ENDED_OPTIONS[] = { "REINTENTAR", "MENÚ" };
     constexpr int ENDED_OPTION_COUNT = sizeof(ENDED_OPTIONS) / sizeof(ENDED_OPTIONS[0]);
 
-    constexpr const char* PAUSE_OPTIONS[] = { "CONTINUAR", "SALIR" };
+    constexpr const char* PAUSE_OPTIONS[] = { "CONTINUAR", "REINICIAR", "SALIR" };
     constexpr int PAUSE_OPTION_COUNT = sizeof(PAUSE_OPTIONS) / sizeof(PAUSE_OPTIONS[0]);
 
     constexpr const char* MAIN_MENU_OPTIONS[] = { "JUGAR", "CÓMO JUGAR", "LIBRO", "CONFIGURACIÓN", "CRÉDITOS" };
@@ -873,7 +873,9 @@ int main()
     };
     play_menu_music();
 
-    bn::vector<bn::sprite_ptr, 24> ended_line[ENDED_OPTION_COUNT];
+    // Dimensionado por el menú de pausa, que reusa estos vectores y tiene
+    // una opción más que el de fin.
+    bn::vector<bn::sprite_ptr, 24> ended_line[PAUSE_OPTION_COUNT];
     int ended_cursor = 0;
 
     const auto draw_ended_menu = [&]()
@@ -893,7 +895,9 @@ int main()
         for (int k = 0; k < PAUSE_OPTION_COUNT; ++k)
         {
             ended_line[k].clear();
-            bn::fixed y = 40 + k * 18;
+            // 34 + 16: con tres opciones hay que comprimir para no pisar
+            // el borde inferior de la tarjeta.
+            bn::fixed y = 34 + k * 16;
             text_generator.generate(k == ended_cursor ? -38 : -42, y,
                     PAUSE_OPTIONS[k], ended_line[k]);
         }
@@ -1599,7 +1603,8 @@ int main()
             bool start_now = bn::keypad::start_pressed() || bn::keypad::a_pressed();
             if (bn::keypad::up_pressed() || bn::keypad::down_pressed())
             {
-                ended_cursor = (ended_cursor + 1) % PAUSE_OPTION_COUNT;
+                int delta = bn::keypad::up_pressed() ? -1 : 1;
+                ended_cursor = (ended_cursor + PAUSE_OPTION_COUNT + delta) % PAUSE_OPTION_COUNT;
                 draw_pause_menu();
                 play_sfx(bn::sound_items::sfx_menu_move);
             }
@@ -1618,26 +1623,35 @@ int main()
             }
             else if (start_now)
             {
-                // Salir al menú de canciones, limpiando la partida a medias.
                 message_text.clear();
                 judgement_text.clear();
                 for (int k = 0; k < PAUSE_OPTION_COUNT; ++k)
                 {
                     ended_line[k].clear();
                 }
-                active_notes.clear();
-                dying_enemies.clear();
-                sparks.clear();
-                score_text.clear();
-                combo_text.clear();
-                hero_sprite.set_visible(true); // en los menús se ve de mascota
                 bn::music::resume();
-                play_menu_music();
-                draw_title();
-                draw_menu();
-                preview_pending_at = frame + PREVIEW_DEBOUNCE;
-                phase = game_phase::song_select;
                 play_sfx(bn::sound_items::sfx_menu_select);
+                if (ended_cursor == 1)
+                {
+                    // Reiniciar el nivel desde cero.
+                    reset_game();
+                    phase = game_phase::playing;
+                }
+                else
+                {
+                    // Salir al menú de canciones, limpiando la partida a medias.
+                    active_notes.clear();
+                    dying_enemies.clear();
+                    sparks.clear();
+                    score_text.clear();
+                    combo_text.clear();
+                    hero_sprite.set_visible(true); // en los menús se ve de mascota
+                    play_menu_music();
+                    draw_title();
+                    draw_menu();
+                    preview_pending_at = frame + PREVIEW_DEBOUNCE;
+                    phase = game_phase::song_select;
+                }
             }
         }
         else if (phase == game_phase::ended)
@@ -2063,7 +2077,11 @@ int main()
             {
                 cursor_target = -40 + (menu_song - menu_scroll) * 16;
             }
-            else if (phase == game_phase::paused || phase == game_phase::ended)
+            else if (phase == game_phase::paused)
+            {
+                cursor_target = 34 + ended_cursor * 16;
+            }
+            else if (phase == game_phase::ended)
             {
                 cursor_target = 40 + ended_cursor * 18;
             }
