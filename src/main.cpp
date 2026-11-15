@@ -448,14 +448,6 @@ namespace
         {
             palette.set_fade(bn::colors::yellow, 0.5);
         }
-        else if (type == enemy_type::armored)
-        {
-            palette.set_fade(bn::colors::gray, 0.6);
-        }
-        else if (type == enemy_type::projectile)
-        {
-            palette.set_fade(bn::colors::magenta, 0.5);
-        }
         else if (type == enemy_type::chain)
         {
             palette.set_fade(bn::colors::cyan, 0.5);
@@ -2011,25 +2003,14 @@ int main()
                 continue;
             }
 
-            bool needs_a = note.type == enemy_type::armored;
-            bool needs_b = note.type == enemy_type::projectile;
-
-            if ((needs_a && !bn::keypad::a_held()) || (needs_b && !bn::keypad::b_held()))
+            const score_tier& tier = best_diff <= PERFECT_FRAMES ? PERFECT_TIER
+                    : best_diff <= GREAT_FRAMES ? GREAT_TIER : GOOD_TIER;
+            bool heals = note.type == enemy_type::heart;
+            detach_sprite(note, true);
+            resolve_hit(note, tier);
+            if (heals && hp < HP_CAP)
             {
-                detach_sprite(note, false);
-                register_miss(note);
-            }
-            else
-            {
-                const score_tier& tier = best_diff <= PERFECT_FRAMES ? PERFECT_TIER
-                        : best_diff <= GREAT_FRAMES ? GREAT_TIER : GOOD_TIER;
-                bool heals = note.type == enemy_type::heart;
-                detach_sprite(note, true);
-                resolve_hit(note, tier);
-                if (heals && hp < HP_CAP)
-                {
-                    ++hp; // con vida llena da un sexto corazón extra
-                }
+                ++hp; // con vida llena da un sexto corazón extra
             }
 
             active_notes.erase(active_notes.begin() + best_index);

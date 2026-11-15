@@ -1,11 +1,8 @@
 /*
- * Charts generados por semilla (PRNG mulberry32),
- * uno por dificultad — la canción es un eje aparte (ver SONG_LIST en
- * main.cpp). Todos con enemy_type::basic nada más ("solo cruceta"). El
- * código de acorazado/cadena/proyectil/euforia sigue en main.cpp sin
- * usarse, por si se retoma más adelante.
+ * Charts generados por semilla (PRNG mulberry32), uno por combinación
+ * canción+dificultad (ver build_chart() y SONG_LIST en main.cpp).
  *
- * beat * FRAMES_PER_BEAT = frame del juicio (ver main.cpp).
+ * beat * frames_per_beat = frame del juicio (ver main.cpp).
  */
 #ifndef CHART_H
 #define CHART_H
@@ -15,9 +12,9 @@
 enum class enemy_type
 {
     basic,
-    armored,
+    // Fila de 3 (ráfaga estilo Muse Dash): se revienta tocando la cruceta
+    // 3 veces dentro de su ventana.
     chain,
-    projectile,
     // Corazón curativo: se golpea como un enemigo y cura 1 HP; fallarlo
     // no castiga. Solo aparece de NORMAL hacia arriba.
     heart,
