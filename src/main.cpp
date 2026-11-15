@@ -53,6 +53,7 @@
 #include "bn_sprite_items_meter_seg.h"
 #include "bn_sprite_items_rank_letters.h"
 #include "bn_sprite_items_dog.h"
+#include "bn_sprite_items_streak.h"
 #include "bn_regular_bg_items_dialog_box.h"
 #include "bn_string_view.h"
 
@@ -524,6 +525,18 @@ int main()
     dialog_bg.set_z_order(-2);
     bn::sprite_ptr dog_sprite = bn::sprite_items::dog.create_sprite(8, -70);
     dog_sprite.set_visible(false);
+
+    // Líneas de velocidad de la escena de la caída: suben a toda prisa
+    // alrededor del perrito (la cámara cae con él).
+    bn::vector<bn::sprite_ptr, 5> streaks;
+    {
+        constexpr bn::fixed STREAK_X[] = { -62, -30, 28, 52, 76 };
+        for (bn::fixed x : STREAK_X)
+        {
+            streaks.push_back(bn::sprite_items::streak.create_sprite(x, 0));
+            streaks.back().set_visible(false);
+        }
+    }
 
     // Motas de polvo de la caverna: flotan lento hacia arriba en la
     // pantalla de título para que el fondo no se sienta estático.
@@ -2104,17 +2117,38 @@ int main()
             bool in_scene = phase == game_phase::scene;
             dialog_bg.set_visible(in_scene);
             dog_sprite.set_visible(in_scene && scene_index != 1);
+            bool falling = in_scene && scene_index == 0;
+            for (int st = 0; st < streaks.size(); ++st)
+            {
+                streaks[st].set_visible(falling);
+                if (falling)
+                {
+                    // Cada línea sube a su velocidad y reaparece abajo.
+                    bn::fixed y = streaks[st].y() - (4 + st);
+                    if (y < -80)
+                    {
+                        y = 80;
+                    }
+                    streaks[st].set_y(y);
+                }
+            }
+
             if (in_scene)
             {
-                // La caverna de las escenas siempre en el mismo tono abismo.
+                // La caverna de las escenas en tono abismo; en la caída,
+                // casi negro (es el vacío, no un piso).
                 bn::bg_palette_ptr scene_zone_palette = zone_bg.palette();
-                scene_zone_palette.set_fade(bn::color(4, 3, 9), 0.6);
+                scene_zone_palette.set_fade(bn::color(4, 3, 9), falling ? bn::fixed(0.85) : bn::fixed(0.6));
 
                 if (scene_index == 0)
                 {
-                    // El perrito cae al abismo, en loop.
-                    dog_sprite.set_position(8, -76 + (frame / 2) % 96);
+                    // El perrito cae dando tumbos casi al centro: la cámara
+                    // cae con él y el mundo pasa volando hacia arriba.
+                    int wobble = (frame / 4) % 24;
+                    wobble = wobble < 12 ? wobble : 24 - wobble;
+                    dog_sprite.set_position(4, -26 + wobble);
                     dog_sprite.set_item(bn::sprite_items::dog, (frame / 8) % 2);
+                    dog_sprite.set_horizontal_flip((frame / 16) % 2 == 1);
                 }
                 else if (scene_index == 2)
                 {
@@ -2123,6 +2157,7 @@ int main()
                     bn::fixed bob = since_beat < 6 ? bn::fixed(6 - since_beat) / 3 : bn::fixed(0);
                     dog_sprite.set_position(16, -6 - bob);
                     dog_sprite.set_item(bn::sprite_items::dog, (frame * 2 / 29) % 2);
+                    dog_sprite.set_horizontal_flip(false); // sin tumbos acá
                 }
 
                 // El indicador (A) parpadea y el diálogo late con el abismo.

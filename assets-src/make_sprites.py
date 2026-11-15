@@ -187,6 +187,22 @@ def make_dog():
     return out, palette
 
 
+def make_streak():
+    """Linea de velocidad 8x8 (vertical) para la escena de la caida:
+    suben rapido alrededor del perrito = la camara cae con el."""
+    palette = [TRANSPARENT, (0x55, 0x4B, 0x78), (0x8E, 0x82, 0xB5)]
+    out = Image.new("P", (8, 8))
+    pixels = [0] * 64
+    for y in range(8):
+        pixels[y * 8 + 3] = 2 if y < 5 else 1  # brillante arriba, cola tenue
+    out.putdata(pixels)
+    out.putpalette([c for rgb in palette for c in rgb] + [0] * (768 - 9))
+    out.save(OUT / "streak.bmp")
+    (OUT / "streak.json").write_text('{\n    "type": "sprite",\n\t"height": 8\n}\n')
+    print("streak: 1 frame, 3 colores")
+    return out, palette
+
+
 def make_flash():
     """Destello 16x16 del anillo: anillo blanco con halo dorado que se
     muestra unos frames en el punto del carril al presionar."""
@@ -236,6 +252,7 @@ def main():
     results.append(make_flash())
     results.append(make_meter())
     results.append(make_dog())
+    results.append(make_streak())
 
     # Preview ampliada para revisar los frames elegidos.
     Z = 6
