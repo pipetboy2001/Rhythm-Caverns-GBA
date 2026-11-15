@@ -940,7 +940,9 @@ int main()
         text_generator.generate(-56, 46, record_str, record_line);
 
         title_line2.clear();
-        text_generator.generate(-74, 66, L("ARRIBA/ABAJO+L/R+START", "UP/DOWN+L/R+START"), title_line2);
+        // Comas y no "+": con "+" parecía pedir presionar todo junto,
+        // cuando son tres controles distintos de esta pantalla.
+        text_generator.generate(-74, 66, L("ARRIBA/ABAJO, L/R, START", "UP/DOWN, L/R, START"), title_line2);
     };
 
     const auto clear_song_select = [&]()
