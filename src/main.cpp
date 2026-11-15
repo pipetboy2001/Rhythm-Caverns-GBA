@@ -52,6 +52,9 @@
 #include "bn_sprite_items_hit_flash.h"
 #include "bn_sprite_items_meter_seg.h"
 #include "bn_sprite_items_rank_letters.h"
+#include "bn_sprite_items_dog.h"
+#include "bn_regular_bg_items_dialog_box.h"
+#include "bn_string_view.h"
 
 #include "common_variable_8x16_sprite_font.h"
 
@@ -202,46 +205,53 @@ namespace
     };
     constexpr int HELP_LINE_COUNT = sizeof(HELP_LINES) / sizeof(HELP_LINES[0]);
 
-    // La microhistoria: tres escenas que se viven durante el descenso
-    // (intro al primer JUGAR, al abrirse la cripta, al vencer al BOSS) y
-    // quedan coleccionadas en el LIBRO para releerlas.
+    // La microhistoria: tres escenas cinemáticas (intro al primer JUGAR,
+    // al abrirse la cripta, al vencer al BOSS), coleccionadas en el LIBRO.
+    // Cada escena son actores sobre la caverna + cajas de diálogo estilo
+    // RPG con efecto máquina de escribir.
     constexpr int SCENE_COUNT = 3;
-    constexpr int SCENE_LINE_COUNT = 9;
-    constexpr const char* SCENE_LINES[SCENE_COUNT][SCENE_LINE_COUNT] = {
+    constexpr int SCENE_BOX_COUNT = 3;
+    constexpr const char* SCENE_TITLES[SCENE_COUNT] = {
+        "I. EL DESCENSO",
+        "II. EL RASTRO",
+        "III. EL REENCUENTRO",
+    };
+    constexpr const char* SCENE_BOXES[SCENE_COUNT][SCENE_BOX_COUNT][2] = {
         {
-            "I. EL DESCENSO",
-            "",
-            "EL ABISMO LATE DESDE",
-            "HACE MIL AÑOS. ANOCHE",
-            "TU PERRITO CAYÓ EN ÉL.",
-            "SOLO QUIEN GOLPEA A",
-            "SU COMPÁS PUEDE BAJAR.",
-            "",
-            "A CONTINUAR",
+            { "EL ABISMO LATE DESDE", "HACE MIL AÑOS." },
+            { "ANOCHE, TU PERRITO", "CAYÓ EN ÉL." },
+            { "SOLO QUIEN GOLPEA A SU", "COMPÁS PUEDE BAJAR." },
         },
         {
-            "II. EL RASTRO",
-            "",
-            "HUELLAS FRESCAS BAJAN",
-            "HACIA LA CRIPTA.",
-            "EL LATIDO SE ACELERA:",
-            "EL ABISMO YA SABE",
-            "QUE VIENES POR ÉL.",
-            "",
-            "A CONTINUAR",
+            { "HUELLAS FRESCAS BAJAN", "HACIA LA CRIPTA." },
+            { "EL LATIDO SE ACELERA...", "" },
+            { "EL ABISMO YA SABE", "QUE VIENES POR ÉL." },
         },
         {
-            "III. EL REENCUENTRO",
-            "",
-            "EL CORAZÓN SE CALMA.",
-            "LAS CRIATURAS DESPIERTAN",
-            "Y BAILAN LIBRES.",
-            "UN LADRIDO CONOCIDO...",
-            "¡GUAU! ¡GUAU!",
-            "",
-            "A CONTINUAR",
+            { "EL CORAZÓN SE CALMA.", "" },
+            { "LAS CRIATURAS DESPIERTAN", "Y BAILAN LIBRES." },
+            { "UN LADRIDO CONOCIDO...", "¡GUAU! ¡GUAU!" },
         },
     };
+
+    // Prefijo de un texto cortado en límite de carácter UTF-8 (las tildes
+    // son multibyte: la máquina de escribir no puede partirlas al medio).
+    bn::string<32> utf8_prefix(const char* text, int bytes)
+    {
+        bn::string_view view(text);
+        int length = int(view.size());
+        if (bytes > length)
+        {
+            bytes = length;
+        }
+        while (bytes < length && (text[bytes] & 0xC0) == 0x80)
+        {
+            ++bytes;
+        }
+        bn::string<32> result;
+        result.append(view.substr(0, bytes));
+        return result;
+    }
 
     constexpr const char* CREDITS_LINES[] = {
         "UN JUEGO DE PIPETBOY",
@@ -508,6 +518,13 @@ int main()
     cursor_bg.set_z_order(-3);
     bn::fixed cursor_card_y = -10;
 
+    // Caja de diálogo RPG de las escenas (franja inferior) y el perrito.
+    bn::regular_bg_ptr dialog_bg = bn::regular_bg_items::dialog_box.create_bg(0, 0);
+    dialog_bg.set_visible(false);
+    dialog_bg.set_z_order(-2);
+    bn::sprite_ptr dog_sprite = bn::sprite_items::dog.create_sprite(8, -70);
+    dog_sprite.set_visible(false);
+
     // Motas de polvo de la caverna: flotan lento hacia arriba en la
     // pantalla de título para que el fondo no se sienta estático.
     struct dust_mote
@@ -624,10 +641,15 @@ int main()
     // LIBRO: índice de escenas vividas (??? las pendientes) y visor de
     // una escena, que también se usa cuando la historia avanza en vivo.
     bn::vector<bn::sprite_ptr, 28> book_text[SCENE_COUNT + 2];
-    bn::vector<bn::sprite_ptr, 28> scene_text[SCENE_LINE_COUNT];
+    bn::vector<bn::sprite_ptr, 28> scene_title_text;
+    bn::vector<bn::sprite_ptr, 28> scene_dialog_text[2];
+    bn::vector<bn::sprite_ptr, 4> scene_prompt_text;
     int book_cursor = 0;
     int scene_index = 0;
     bool scene_from_book = false;
+    int scene_box = 0;
+    int scene_box_start = 0;    // frame de arranque de la máquina de escribir
+    int scene_shown_chars = -1; // bytes ya dibujados (cache de regeneración)
 
     const auto draw_book = [&]()
     {
@@ -636,7 +658,7 @@ int main()
         for (int s = 0; s < SCENE_COUNT; ++s)
         {
             book_text[1 + s].clear();
-            const char* label = save.scenes_seen[s] ? SCENE_LINES[s][0] : "???";
+            const char* label = save.scenes_seen[s] ? SCENE_TITLES[s] : "???";
             text_generator.generate(s == book_cursor ? -50 : -54, -20 + s * 20,
                     label, book_text[1 + s]);
         }
@@ -654,19 +676,28 @@ int main()
 
     const auto draw_scene = [&]()
     {
-        for (int i = 0; i < SCENE_LINE_COUNT; ++i)
-        {
-            scene_text[i].clear();
-            text_generator.generate(-74, -56 + i * 14, SCENE_LINES[scene_index][i], scene_text[i]);
-        }
+        scene_title_text.clear();
+        text_generator.generate(-74, -64, SCENE_TITLES[scene_index], scene_title_text);
+        scene_dialog_text[0].clear();
+        scene_dialog_text[1].clear();
+        scene_prompt_text.clear();
+        scene_box = 0;
+        scene_shown_chars = -1;
     };
 
     const auto clear_scene = [&]()
     {
-        for (int i = 0; i < SCENE_LINE_COUNT; ++i)
+        // La paleta de fuente es compartida: deshacer el pulso del latido
+        // antes de soltar los sprites.
+        if (!scene_title_text.empty())
         {
-            scene_text[i].clear();
+            bn::sprite_palette_ptr font_palette = scene_title_text[0].palette();
+            font_palette.set_fade_intensity(0);
         }
+        scene_title_text.clear();
+        scene_dialog_text[0].clear();
+        scene_dialog_text[1].clear();
+        scene_prompt_text.clear();
     };
 
     // Configuración: lista de opciones con < valor >, navegable con
@@ -1095,6 +1126,7 @@ int main()
                 scene_index = s;
                 scene_from_book = false;
                 draw_scene();
+                scene_box_start = frame;
                 phase = game_phase::scene;
                 return true;
             }
@@ -1305,6 +1337,7 @@ int main()
                     scene_index = book_cursor;
                     scene_from_book = true;
                     draw_scene();
+                    scene_box_start = frame;
                     phase = game_phase::scene;
                     play_sfx(bn::sound_items::sfx_menu_select);
                 }
@@ -1323,7 +1356,27 @@ int main()
         }
         else if (phase == game_phase::scene)
         {
-            if (bn::keypad::a_pressed() || bn::keypad::start_pressed() || bn::keypad::b_pressed())
+            const char* dialog_line1 = SCENE_BOXES[scene_index][scene_box][0];
+            const char* dialog_line2 = SCENE_BOXES[scene_index][scene_box][1];
+            int line1_bytes = int(bn::string_view(dialog_line1).size());
+            int total_bytes = line1_bytes + int(bn::string_view(dialog_line2).size());
+            int shown = (frame - scene_box_start) / 2;
+            if (shown > total_bytes)
+            {
+                shown = total_bytes;
+            }
+
+            bool advance = bn::keypad::a_pressed() || bn::keypad::start_pressed();
+            if (advance && shown < total_bytes)
+            {
+                // Primer A: completa la caja de golpe.
+                scene_box_start = frame - total_bytes * 2;
+                shown = total_bytes;
+                advance = false;
+                scene_shown_chars = -1;
+            }
+
+            if (bn::keypad::b_pressed() || (advance && scene_box + 1 >= SCENE_BOX_COUNT))
             {
                 clear_scene();
                 play_sfx(bn::sound_items::sfx_menu_select);
@@ -1339,6 +1392,32 @@ int main()
                     draw_menu();
                     preview_pending_at = frame + PREVIEW_DEBOUNCE;
                     phase = game_phase::song_select;
+                }
+            }
+            else if (advance)
+            {
+                ++scene_box;
+                scene_box_start = frame;
+                scene_shown_chars = -1;
+                play_sfx(bn::sound_items::sfx_menu_move);
+            }
+            else if (shown != scene_shown_chars)
+            {
+                // Máquina de escribir: medio carácter por frame.
+                scene_shown_chars = shown;
+                scene_dialog_text[0].clear();
+                scene_dialog_text[1].clear();
+                scene_prompt_text.clear();
+                int first = shown < line1_bytes ? shown : line1_bytes;
+                text_generator.generate(-64, 36, utf8_prefix(dialog_line1, first), scene_dialog_text[0]);
+                if (shown > line1_bytes)
+                {
+                    text_generator.generate(-64, 54, utf8_prefix(dialog_line2, shown - line1_bytes),
+                            scene_dialog_text[1]);
+                }
+                if (shown == total_bytes)
+                {
+                    text_generator.generate(84, 62, "A", scene_prompt_text);
                 }
             }
         }
@@ -1949,8 +2028,9 @@ int main()
         bool battle_scene = phase == game_phase::playing || phase == game_phase::ended
                 || phase == game_phase::paused;
         arena_bg.set_visible(battle_scene);
-        zone_bg.set_visible(battle_scene);
-        panel_bg.set_visible(phase != game_phase::playing);
+        // La caverna también es el escenario de las escenas de historia.
+        zone_bg.set_visible(battle_scene || phase == game_phase::scene);
+        panel_bg.set_visible(phase != game_phase::playing && phase != game_phase::scene);
         logo_bg.set_visible(phase == game_phase::main_menu);
 
         // Tarjeta de cursor: persigue a la opción seleccionada con un
@@ -2007,16 +2087,57 @@ int main()
         }
 
         // El héroe-mascota estorba en el selector (la estrella es el bicho
-        // de cada canción), en CÓMO JUGAR (los iconos ya ilustran) y en
-        // las escenas (el texto llega hasta su zona).
+        // de cada canción) y en CÓMO JUGAR (los iconos ya ilustran). En la
+        // escena I tampoco está (el perrito cae solo); en II y III actúa.
         if (phase == game_phase::song_select || phase == game_phase::how_to_play
-                || phase == game_phase::scene)
+                || (phase == game_phase::scene && scene_index == 0))
         {
             hero_sprite.set_visible(false);
         }
         else if (phase != game_phase::paused) // la pausa maneja lo suyo
         {
             hero_sprite.set_visible(true);
+        }
+
+        // Actores, caja y ambiente de las escenas de historia.
+        {
+            bool in_scene = phase == game_phase::scene;
+            dialog_bg.set_visible(in_scene);
+            dog_sprite.set_visible(in_scene && scene_index != 1);
+            if (in_scene)
+            {
+                // La caverna de las escenas siempre en el mismo tono abismo.
+                bn::bg_palette_ptr scene_zone_palette = zone_bg.palette();
+                scene_zone_palette.set_fade(bn::color(4, 3, 9), 0.6);
+
+                if (scene_index == 0)
+                {
+                    // El perrito cae al abismo, en loop.
+                    dog_sprite.set_position(8, -76 + (frame / 2) % 96);
+                    dog_sprite.set_item(bn::sprite_items::dog, (frame / 8) % 2);
+                }
+                else if (scene_index == 2)
+                {
+                    // Reencuentro: salta al compás junto al héroe.
+                    int since_beat = frame % 29;
+                    bn::fixed bob = since_beat < 6 ? bn::fixed(6 - since_beat) / 3 : bn::fixed(0);
+                    dog_sprite.set_position(16, -6 - bob);
+                    dog_sprite.set_item(bn::sprite_items::dog, (frame * 2 / 29) % 2);
+                }
+
+                // El indicador (A) parpadea y el diálogo late con el abismo.
+                for (bn::sprite_ptr& prompt_sprite : scene_prompt_text)
+                {
+                    prompt_sprite.set_visible((frame % 32) < 20);
+                }
+                if (!scene_dialog_text[0].empty())
+                {
+                    int since_beat = frame % 29;
+                    bn::fixed text_pulse = since_beat < 6 ? bn::fixed(6 - since_beat) / 30 : bn::fixed(0);
+                    bn::sprite_palette_ptr dialog_palette = scene_dialog_text[0][0].palette();
+                    dialog_palette.set_fade(bn::colors::yellow, text_pulse);
+                }
+            }
         }
 
         // Mini-ícono junto a la canción seleccionada: aletea al tempo del
@@ -2145,6 +2266,11 @@ int main()
                 int since_beat = frame % frames_per_beat;
                 bn::fixed bob = since_beat < 6 ? bn::fixed(6 - since_beat) / 3 : bn::fixed(0);
                 hero_sprite.set_position(0, -bob);
+            }
+            else if (phase == game_phase::scene)
+            {
+                // En II busca huellas al centro; en III posa junto al perrito.
+                hero_sprite.set_position(scene_index == 2 ? -16 : 0, -8);
             }
             else
             {

@@ -127,6 +127,66 @@ def make_mote():
     return out, palette
 
 
+DOG_FRAMES = [
+    # perrito sentado mirando a la izquierda; frame 2 alza orejas y cola
+    [
+        "................",
+        ".#..#...........",
+        "#o##o#..........",
+        "#oooo#..........",
+        "#Eooo#..........",
+        "#oooo#..........",
+        "#Nooo##.........",
+        ".##oooo#........",
+        "..#ooooo#..##...",
+        ".#ccooooo##o#...",
+        ".#ccoooooo#o#...",
+        ".#ccooooooo##...",
+        ".#ccooooooo#....",
+        "..#o##ooo#......",
+        "..#o#..#o#......",
+        "..##....##......",
+    ],
+    [
+        ".#..#...........",
+        "#o##o#..........",
+        "#oooo#..........",
+        "#Eooo#..........",
+        "#oooo#..........",
+        "#Nooo##.........",
+        ".##oooo#...##...",
+        "..#ooooo#.#o#...",
+        ".#ccooooo##o#...",
+        ".#ccoooooo##....",
+        ".#ccooooooo#....",
+        ".#ccooooooo#....",
+        "..#oooooooo#....",
+        "..#o##ooo#......",
+        "..#o#..#o#......",
+        "..##....##......",
+    ],
+]
+
+
+def make_dog():
+    """El perrito 16x16 (2 frames), pixelado a mano: no hay perro en el
+    pack y es el corazon de la historia."""
+    colors = {"#": 1, "o": 2, "c": 3, "E": 1, "N": 1, "(": 2}
+    palette = [TRANSPARENT, (0x2A, 0x1C, 0x30), (0xC8, 0x76, 0x40), (0xFF, 0xE4, 0xAE)]
+    out = Image.new("P", (16, 32))
+    pixels = []
+    for grid in DOG_FRAMES:
+        for row in grid:
+            for ch in row:
+                pixels.append(colors.get(ch, 0))
+    out.putdata(pixels)
+    out.putpalette([c for rgb in palette for c in rgb] + [0] * (768 - 12))
+    out.save(OUT / "dog.bmp")
+    (OUT / "dog.json").write_text('{\n    "type": "sprite",\n\t"height": 16\n}\n')
+    print("dog: 2 frames, 4 colores")
+    return out, palette
+
+
 def make_flash():
     """Destello 16x16 del anillo: anillo blanco con halo dorado que se
     muestra unos frames en el punto del carril al presionar."""
@@ -175,6 +235,7 @@ def main():
     results.append(make_mote())
     results.append(make_flash())
     results.append(make_meter())
+    results.append(make_dog())
 
     # Preview ampliada para revisar los frames elegidos.
     Z = 6

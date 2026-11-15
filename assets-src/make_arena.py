@@ -113,6 +113,18 @@ def panel_pixel(x, y):
     return color
 
 
+# Caja de diálogo estilo RPG para las escenas de la historia: franja
+# inferior con el mismo estilo de tarjeta.
+DIALOG = (16, 148, 240, 202)
+
+
+def dialog_pixel(x, y):
+    if not in_rounded_rect(x, y, DIALOG, CARD_RADIUS):
+        return None
+    inner = (DIALOG[0] + BORDER, DIALOG[1] + BORDER, DIALOG[2] - BORDER, DIALOG[3] - BORDER)
+    return FLOOR if in_rounded_rect(x, y, inner, CARD_RADIUS - BORDER) else INK
+
+
 # Tarjeta de cursor estilo osu!: un resaltador de una fila que main.cpp
 # desliza detrás de la opción seleccionada en los menús. Centrada en el
 # bmp para que la posición del BG sea directamente la fila resaltada.
@@ -185,3 +197,4 @@ if __name__ == "__main__":
     build("arena", arena_pixel)
     build("menu_panel", panel_pixel)
     build("cursor_card", cursor_pixel)
+    build("dialog_box", dialog_pixel)
