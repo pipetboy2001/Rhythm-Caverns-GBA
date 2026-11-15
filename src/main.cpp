@@ -190,17 +190,30 @@ namespace
     // arriba de lo elegido (DIFICIL usa el chart especial difficulty::boss).
     constexpr int BOSS_SONG_INDEX = SONG_LIST_COUNT - 1;
 
+    // Para cada array traducible: el español (ya existía) alimenta el
+    // _COUNT vía sizeof y NO se toca; el inglés es un hermano del mismo
+    // tamaño, verificado con static_assert, y se elige en cada sitio de
+    // lectura con (save.language == 0 ? X : X_EN)[...]. Así ningún _COUNT
+    // (usado para dimensionar la SRAM y ciclar menús) cambia de valor.
     constexpr const char* DIFFICULTY_NAMES[] = { "FÁCIL", "NORMAL", "DIFÍCIL", "MUY DIFÍCIL" };
     constexpr int DIFFICULTY_COUNT = sizeof(DIFFICULTY_NAMES) / sizeof(DIFFICULTY_NAMES[0]);
+    constexpr const char* DIFFICULTY_NAMES_EN[] = { "EASY", "NORMAL", "HARD", "VERY HARD" };
+    static_assert(sizeof(DIFFICULTY_NAMES_EN) / sizeof(DIFFICULTY_NAMES_EN[0]) == DIFFICULTY_COUNT, "");
 
     constexpr const char* ENDED_OPTIONS[] = { "REINTENTAR", "MENÚ" };
     constexpr int ENDED_OPTION_COUNT = sizeof(ENDED_OPTIONS) / sizeof(ENDED_OPTIONS[0]);
+    constexpr const char* ENDED_OPTIONS_EN[] = { "RETRY", "MENU" };
+    static_assert(sizeof(ENDED_OPTIONS_EN) / sizeof(ENDED_OPTIONS_EN[0]) == ENDED_OPTION_COUNT, "");
 
     constexpr const char* PAUSE_OPTIONS[] = { "CONTINUAR", "REINICIAR", "SALIR" };
     constexpr int PAUSE_OPTION_COUNT = sizeof(PAUSE_OPTIONS) / sizeof(PAUSE_OPTIONS[0]);
+    constexpr const char* PAUSE_OPTIONS_EN[] = { "RESUME", "RESTART", "QUIT" };
+    static_assert(sizeof(PAUSE_OPTIONS_EN) / sizeof(PAUSE_OPTIONS_EN[0]) == PAUSE_OPTION_COUNT, "");
 
     constexpr const char* MAIN_MENU_OPTIONS[] = { "JUGAR", "CÓMO JUGAR", "LIBRO", "CONFIGURACIÓN", "CRÉDITOS" };
     constexpr int MAIN_MENU_OPTION_COUNT = sizeof(MAIN_MENU_OPTIONS) / sizeof(MAIN_MENU_OPTIONS[0]);
+    constexpr const char* MAIN_MENU_OPTIONS_EN[] = { "PLAY", "HOW TO PLAY", "BOOK", "SETTINGS", "CREDITS" };
+    static_assert(sizeof(MAIN_MENU_OPTIONS_EN) / sizeof(MAIN_MENU_OPTIONS_EN[0]) == MAIN_MENU_OPTION_COUNT, "");
 
     // Sin pista del código Konami: secreto de verdad, que lo descubran.
     constexpr const char* HELP_LINES[] = {
@@ -214,6 +227,17 @@ namespace
         "B PARA VOLVER",
     };
     constexpr int HELP_LINE_COUNT = sizeof(HELP_LINES) / sizeof(HELP_LINES[0]);
+    constexpr const char* HELP_LINES_EN[] = {
+        "HIT THE D-PAD",
+        "WHEN IT REACHES THE RING",
+        "ROW OF 3: TAP 3 TIMES",
+        "FRENZY FULL: A = X2",
+        "HEART: HIT IT TO HEAL",
+        "START PAUSES THE GAME",
+        "",
+        "B TO GO BACK",
+    };
+    static_assert(sizeof(HELP_LINES_EN) / sizeof(HELP_LINES_EN[0]) == HELP_LINE_COUNT, "");
 
     // La microhistoria: tres escenas cinemáticas (intro al primer JUGAR,
     // al abrirse la cripta, al vencer al BOSS), coleccionadas en el LIBRO.
@@ -225,6 +249,11 @@ namespace
         "I. EL DESCENSO",
         "II. EL RASTRO",
         "III. EL REENCUENTRO",
+    };
+    constexpr const char* SCENE_TITLES_EN[SCENE_COUNT] = {
+        "I. THE DESCENT",
+        "II. THE TRAIL",
+        "III. THE REUNION",
     };
     constexpr const char* SCENE_BOXES[SCENE_COUNT][SCENE_BOX_COUNT][2] = {
         {
@@ -241,6 +270,23 @@ namespace
             { "EL CORAZÓN SE CALMA.", "" },
             { "LAS CRIATURAS DESPIERTAN", "Y BAILAN LIBRES." },
             { "UN LADRIDO CONOCIDO...", "¡GUAU! ¡GUAU!" },
+        },
+    };
+    constexpr const char* SCENE_BOXES_EN[SCENE_COUNT][SCENE_BOX_COUNT][2] = {
+        {
+            { "THE ABYSS HAS BEEN", "BEATING FOR AGES." },
+            { "LAST NIGHT, YOUR PUPPY", "FELL INTO IT." },
+            { "ONLY THOSE WHO STRIKE TO", "ITS BEAT CAN DESCEND." },
+        },
+        {
+            { "FRESH PAWPRINTS LEAD", "DOWN TO THE CRYPT." },
+            { "THE HEARTBEAT QUICKENS...", "" },
+            { "THE ABYSS ALREADY KNOWS", "YOU ARE COMING FOR IT." },
+        },
+        {
+            { "THE HEART GROWS CALM.", "" },
+            { "THE CREATURES AWAKEN", "AND DANCE FREELY." },
+            { "A FAMILIAR BARK...", "WOOF! WOOF!" },
         },
     };
 
@@ -275,13 +321,25 @@ namespace
         "B PARA VOLVER",
     };
     constexpr int CREDITS_LINE_COUNT = sizeof(CREDITS_LINES) / sizeof(CREDITS_LINES[0]);
+    constexpr const char* CREDITS_LINES_EN[] = {
+        "A GAME BY PIPETBOY",
+        "MUSIC: SPRING+VINSCOOL",
+        "(OPENGAMEART, CC0)",
+        "ART: TOADZILLART",
+        "(ITCH.IO)",
+        "SFX: SUBSPACEAUDIO",
+        "(OPENGAMEART, CC0)",
+        "",
+        "B TO GO BACK",
+    };
+    static_assert(sizeof(CREDITS_LINES_EN) / sizeof(CREDITS_LINES_EN[0]) == CREDITS_LINE_COUNT, "");
 
     // Récord por canción y dificultad, persistido en SRAM. magic detecta la
     // primera vez que corre el juego en un cartucho/batería nueva (SRAM sin
     // inicializar, basura de fábrica) para no mostrar un récord falso.
-    // 57: se sumó scenes_seen al layout — el magic nuevo descarta saves
+    // 58: se sumó language al layout — el magic nuevo descarta saves
     // viejos.
-    constexpr int SAVE_MAGIC = 0x474F4C57;
+    constexpr int SAVE_MAGIC = 0x474F4C58;
 
     // Tope del ajuste de latencia, en frames (~17 ms cada uno).
     constexpr int LATENCY_LIMIT = 15;
@@ -297,6 +355,7 @@ namespace
         int music_volume; // 0..10 (décimas)
         int sfx_volume;   // 0..10 (décimas)
         int scenes_seen[SCENE_COUNT]; // 1 = escena vivida (visible en el LIBRO)
+        int language; // 0 = español, 1 = inglés
     };
 
     bn::fixed_point lane_direction(lane ln)
@@ -448,8 +507,18 @@ int main()
         {
             save.scenes_seen[s] = 0;
         }
+        save.language = 0; // español por defecto
         bn::sram::write(save);
     }
+
+    // L(es, en) centraliza la elección de idioma para strings sueltos; los
+    // arrays grandes (menús, ayuda, historia) usan su propio hermano _EN
+    // elegido en el sitio de lectura (ver declaraciones más arriba) para no
+    // tocar los _COUNT derivados de sizeof.
+    const auto L = [&](const char* es, const char* en)
+    {
+        return save.language == 0 ? es : en;
+    };
 
     // Chart de la partida en curso: se construye en reset_game() con la
     // semilla de canción+dificultad (cada combinación es única).
@@ -613,11 +682,11 @@ int main()
             // La opción elegida la marca la tarjeta de cursor; el texto
             // seleccionado se corre un pelo, como las tarjetas de osu.
             text_generator.generate(k == main_menu_cursor ? -38 : -42, y,
-                    MAIN_MENU_OPTIONS[k], main_menu_line[k]);
+                    (save.language == 0 ? MAIN_MENU_OPTIONS : MAIN_MENU_OPTIONS_EN)[k], main_menu_line[k]);
         }
 
         title_line2.clear();
-        text_generator.generate(-56, 66, "START PARA ELEGIR", title_line2);
+        text_generator.generate(-56, 66, L("START PARA ELEGIR", "START TO BEGIN"), title_line2);
     };
 
     bn::vector<bn::sprite_ptr, 28> credits_text[CREDITS_LINE_COUNT];
@@ -628,7 +697,8 @@ int main()
         {
             credits_text[i].clear();
             // Interlineado 14: con el crédito del autor son 9 líneas.
-            text_generator.generate(-74, -56 + i * 14, CREDITS_LINES[i], credits_text[i]);
+            text_generator.generate(-74, -56 + i * 14,
+                    (save.language == 0 ? CREDITS_LINES : CREDITS_LINES_EN)[i], credits_text[i]);
         }
     };
 
@@ -648,7 +718,8 @@ int main()
         {
             help_text[i].clear();
             // x -52: el margen izquierdo es para los iconos de ejemplo.
-            text_generator.generate(-52, -56 + i * 16, HELP_LINES[i], help_text[i]);
+            text_generator.generate(-52, -56 + i * 16,
+                    (save.language == 0 ? HELP_LINES : HELP_LINES_EN)[i], help_text[i]);
         }
     };
 
@@ -676,16 +747,17 @@ int main()
     const auto draw_book = [&]()
     {
         book_text[0].clear();
-        text_generator.generate(-74, -48, "EL LIBRO DEL ABISMO", book_text[0]);
+        text_generator.generate(-74, -48, L("EL LIBRO DEL ABISMO", "THE BOOK OF THE ABYSS"), book_text[0]);
         for (int s = 0; s < SCENE_COUNT; ++s)
         {
             book_text[1 + s].clear();
-            const char* label = save.scenes_seen[s] ? SCENE_TITLES[s] : "???";
+            const char* label = save.scenes_seen[s]
+                    ? (save.language == 0 ? SCENE_TITLES : SCENE_TITLES_EN)[s] : "???";
             text_generator.generate(s == book_cursor ? -50 : -54, -20 + s * 20,
                     label, book_text[1 + s]);
         }
         book_text[SCENE_COUNT + 1].clear();
-        text_generator.generate(-74, 48, "A VER - B VOLVER", book_text[SCENE_COUNT + 1]);
+        text_generator.generate(-74, 48, L("A VER - B VOLVER", "A TO VIEW - B BACK"), book_text[SCENE_COUNT + 1]);
     };
 
     const auto clear_book = [&]()
@@ -699,7 +771,8 @@ int main()
     const auto draw_scene = [&]()
     {
         scene_title_text.clear();
-        text_generator.generate(-74, -64, SCENE_TITLES[scene_index], scene_title_text);
+        text_generator.generate(-74, -64,
+                (save.language == 0 ? SCENE_TITLES : SCENE_TITLES_EN)[scene_index], scene_title_text);
         scene_dialog_text[0].clear();
         scene_dialog_text[1].clear();
         scene_prompt_text.clear();
@@ -726,22 +799,26 @@ int main()
     // arriba/abajo (la tarjeta de cursor marca la fila activa) y
     // ajustable con izquierda/derecha. Latencia en frames (~17 ms c/u,
     // positivo = para quien pega tarde); volúmenes en pasos de 10%.
-    constexpr int SETTINGS_OPTION_COUNT = 3;
+    constexpr int SETTINGS_OPTION_COUNT = 4;
     constexpr int SETTINGS_LINE_COUNT = SETTINGS_OPTION_COUNT + 2;
     bn::vector<bn::sprite_ptr, 28> settings_text[SETTINGS_LINE_COUNT];
     int settings_cursor = 0;
 
     const auto draw_settings = [&]()
     {
-        constexpr const char* SETTING_LABELS[SETTINGS_OPTION_COUNT] =
-                { "LATENCIA", "MÚSICA", "EFECTOS" };
+        // No constexpr: la etiqueta depende de save.language en runtime.
+        const char* SETTING_LABELS[SETTINGS_OPTION_COUNT] =
+                { L("LATENCIA", "LATENCY"), L("MÚSICA", "MUSIC"),
+                  L("EFECTOS", "SFX"), L("IDIOMA", "LANGUAGE") };
         for (int i = 0; i < SETTINGS_OPTION_COUNT; ++i)
         {
             settings_text[i].clear();
             bn::fixed y = -52 + i * 20;
             text_generator.generate(i == settings_cursor ? -70 : -74, y,
                     SETTING_LABELS[i], settings_text[i]);
-            bn::string<12> value = "< ";
+            // 16 y no 12: "< ESPAÑOL >" son 12 bytes exactos (la Ñ ocupa 2
+            // en UTF-8), justo en el límite de la capacidad anterior.
+            bn::string<16> value = "< ";
             if (i == 0)
             {
                 if (save.latency > 0)
@@ -749,6 +826,13 @@ int main()
                     value.append("+");
                 }
                 value.append(bn::to_string<4>(save.latency));
+            }
+            else if (i == 3)
+            {
+                // El nombre del idioma siempre en su propio idioma, nunca
+                // traducido según el idioma actual: así quien cambió sin
+                // querer de idioma igual reconoce el suyo en la lista.
+                value.append(save.language == 0 ? "ESPAÑOL" : "ENGLISH");
             }
             else
             {
@@ -758,10 +842,10 @@ int main()
             value.append(" >");
             text_generator.generate(18, y, value, settings_text[i]);
         }
-        settings_text[3].clear();
-        text_generator.generate(-74, 16, "¿PEGAS TARDE? MÁS LATENCIA", settings_text[3]);
         settings_text[4].clear();
-        text_generator.generate(-74, 44, "B GUARDA Y VUELVE", settings_text[4]);
+        text_generator.generate(-74, 24, L("¿PEGAS TARDE? MÁS LATENCIA", "HIT LATE? RAISE LATENCY"), settings_text[4]);
+        settings_text[5].clear();
+        text_generator.generate(-74, 52, L("B GUARDA Y VUELVE", "B SAVES AND EXITS"), settings_text[5]);
     };
 
     const auto clear_settings = [&]()
@@ -829,7 +913,8 @@ int main()
             difficulty_line[s].set_z_order(1); // sombras detrás
         }
         // Las flechas van en 56/-56: "MUY DIFÍCIL" es largo.
-        text_generator.generate(-40, 28, DIFFICULTY_NAMES[menu_difficulty], difficulty_line);
+        text_generator.generate(-40, 28,
+                (save.language == 0 ? DIFFICULTY_NAMES : DIFFICULTY_NAMES_EN)[menu_difficulty], difficulty_line);
 
         record_line.clear();
         bn::string<24> record_str;
@@ -839,7 +924,7 @@ int main()
         }
         else
         {
-            record_str = "RÉCORD ";
+            record_str = L("RÉCORD ", "RECORD ");
             record_str.append(bn::to_string<10>(save.high_scores[menu_song][menu_difficulty]));
             int saved_rank = save.ranks[menu_song][menu_difficulty];
             if (saved_rank > 0)
@@ -855,7 +940,7 @@ int main()
         text_generator.generate(-56, 46, record_str, record_line);
 
         title_line2.clear();
-        text_generator.generate(-74, 66, "ARRIBA/ABAJO+L/R+START", title_line2);
+        text_generator.generate(-74, 66, L("ARRIBA/ABAJO+L/R+START", "UP/DOWN+L/R+START"), title_line2);
     };
 
     const auto clear_song_select = [&]()
@@ -894,7 +979,7 @@ int main()
             ended_line[k].clear();
             bn::fixed y = 40 + k * 18;
             text_generator.generate(k == ended_cursor ? -38 : -42, y,
-                    ENDED_OPTIONS[k], ended_line[k]);
+                    (save.language == 0 ? ENDED_OPTIONS : ENDED_OPTIONS_EN)[k], ended_line[k]);
         }
     };
 
@@ -908,7 +993,7 @@ int main()
             // el borde inferior de la tarjeta.
             bn::fixed y = 34 + k * 16;
             text_generator.generate(k == ended_cursor ? -38 : -42, y,
-                    PAUSE_OPTIONS[k], ended_line[k]);
+                    (save.language == 0 ? PAUSE_OPTIONS : PAUSE_OPTIONS_EN)[k], ended_line[k]);
         }
     };
 
@@ -1394,8 +1479,9 @@ int main()
 
     const auto handle_scene_phase = [&]()
     {
-        const char* dialog_line1 = SCENE_BOXES[scene_index][scene_box][0];
-        const char* dialog_line2 = SCENE_BOXES[scene_index][scene_box][1];
+        const auto scene_boxes = save.language == 0 ? SCENE_BOXES : SCENE_BOXES_EN;
+        const char* dialog_line1 = scene_boxes[scene_index][scene_box][0];
+        const char* dialog_line2 = scene_boxes[scene_index][scene_box][1];
         int line1_bytes = int(bn::string_view(dialog_line1).size());
         int total_bytes = line1_bytes + int(bn::string_view(dialog_line2).size());
         int shown = (frame - scene_box_start) / 2;
@@ -1492,7 +1578,7 @@ int main()
                     play_sfx(bn::sound_items::sfx_menu_move);
                 }
             }
-            else
+            else if (settings_cursor == 2)
             {
                 int adjusted = save.sfx_volume + delta;
                 if (adjusted >= 0 && adjusted <= 10)
@@ -1501,6 +1587,14 @@ int main()
                     // La prueba en vivo es el propio golpe.
                     play_sfx(bn::sound_items::sfx_hit);
                 }
+            }
+            else
+            {
+                // Idioma: alterna entre los 2 (cualquier dirección sirve,
+                // no es un rango numérico). draw_settings() redibuja esta
+                // misma pantalla ya en el idioma nuevo.
+                save.language = 1 - save.language;
+                play_sfx(bn::sound_items::sfx_menu_move);
             }
             draw_settings();
         }
@@ -1964,14 +2058,14 @@ int main()
             bool new_record = save_results(false, 0, false);
             message_text.clear();
             text_generator.generate(-48, -32, "GAME OVER", message_text);
-            bn::string<20> acc_line = "PRECISIÓN ";
+            bn::string<20> acc_line = L("PRECISIÓN ", "ACCURACY ");
             acc_line.append(bn::to_string<4>(accuracy_percent()));
             acc_line.append("%");
             text_generator.generate(-48, -6, acc_line, message_text);
             if (new_record)
             {
                 text_generator.set_palette_item(RECORD_TEXT_PALETTE);
-                text_generator.generate(-48, 16, "NUEVO RÉCORD", record_banner_text);
+                text_generator.generate(-48, 16, L("NUEVO RÉCORD", "NEW RECORD"), record_banner_text);
                 text_generator.set_palette_item(default_text_palette);
             }
             ended_cursor = 0;
@@ -1988,21 +2082,21 @@ int main()
             message_text.clear();
             // Arriba: estado a la izquierda y aviso de récord a la
             // derecha; al centro el trofeo — la letra de rango gigante.
-            text_generator.generate(-70, -32, "LISTO", message_text);
+            text_generator.generate(-70, -32, L("LISTO", "CLEAR"), message_text);
             if (new_record)
             {
                 text_generator.set_palette_item(RECORD_TEXT_PALETTE);
-                text_generator.generate(-4, -32, "NUEVO RÉCORD", record_banner_text);
+                text_generator.generate(-4, -32, L("NUEVO RÉCORD", "NEW RECORD"), record_banner_text);
                 text_generator.set_palette_item(default_text_palette);
             }
-            text_generator.generate(-58, -2, "RANGO", message_text);
+            text_generator.generate(-58, -2, L("RANGO", "RANK"), message_text);
             rank_sprite.set_item(bn::sprite_items::rank_letters, rank_index - 1);
             rank_sprite.set_visible(true);
             if (full_combo)
             {
                 text_generator.generate(34, -8, "*", message_text);
             }
-            bn::string<20> acc_line = "PRECISIÓN ";
+            bn::string<20> acc_line = L("PRECISIÓN ", "ACCURACY ");
             acc_line.append(bn::to_string<4>(accuracy));
             acc_line.append("%");
             text_generator.generate(-48, 22, acc_line, message_text);
@@ -2027,7 +2121,7 @@ int main()
             }
             judgement_text.clear();
             message_text.clear();
-            text_generator.generate(-24, -28, "PAUSA", message_text);
+            text_generator.generate(-24, -28, L("PAUSA", "PAUSED"), message_text);
             ended_cursor = 0;
             draw_pause_menu();
             play_sfx(bn::sound_items::sfx_menu_select);
