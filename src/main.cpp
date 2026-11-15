@@ -2286,9 +2286,11 @@ int main()
         }
 
         // El héroe-mascota estorba en el selector (la estrella es el bicho
-        // de cada canción) y en CÓMO JUGAR (los iconos ya ilustran). En la
-        // escena I tampoco está (el perrito cae solo); en II y III actúa.
+        // de cada canción), en CÓMO JUGAR (los iconos ya ilustran) y en
+        // CONFIGURACIÓN (la lista ocupa toda la tarjeta). En la escena I
+        // tampoco está (el perrito cae solo); en II y III actúa.
         if (phase == game_phase::song_select || phase == game_phase::how_to_play
+                || phase == game_phase::settings
                 || (phase == game_phase::scene && scene_index == 0))
         {
             hero_sprite.set_visible(false);
