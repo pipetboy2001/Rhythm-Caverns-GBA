@@ -7,21 +7,30 @@ hardware real (GBA SP).
 
 ## Qué tiene
 
-- **9 canciones** × 4 dificultades con progresión por carriles: FACIL usa un
+- **9 canciones** × 4 dificultades con progresión por carriles: FÁCIL usa un
   solo carril para aprender el timing, y cada escalón suma uno hasta MUY
-  DIFICIL con los cuatro. Cada combinación canción+dificultad tiene su
-  propio chart, con récord, rango (S/A/B/C) y estrella de full combo
-  guardados en SRAM.
-- **Tempo real por canción**, leído del header de cada módulo tracker.
+  DIFÍCIL con los cuatro. Cada combinación canción+dificultad tiene su
+  propio chart y su propio tempo (leído del header de cada módulo tracker),
+  con récord, rango (S/A/B/C) y estrella de full combo guardados en SRAM.
+- **Las canciones se desbloquean progresivamente**: se empieza solo con
+  BATTLE; terminar una en una dificultad abre la siguiente en esa
+  dificultad y en todas las menores. Al resaltar una canción desbloqueada
+  en el selector suena un adelanto de ~10 segundos.
 - **Ráfagas** (filas de 3 enemigos): se revientan tocando la cruceta 3 veces,
   estilo Muse Dash / Radio Hammer.
 - **Euforia**: con el medidor lleno, A activa puntos dobles por un rato.
 - **Corazón curativo** a mitad de canción (de NORMAL hacia arriba): se
-  golpea como un enemigo y cura una vida.
+  golpea como un enemigo y cura una vida, o una vida extra si ya estaba
+  llena.
 - **Zonas con identidad**: sets de enemigos, héroe y color de fondo según la
   canción (mazmorra, pradera, cripta) — y una canción **BOSS** que siempre
   juega un escalón de dificultad más arriba.
-- Menú de pausa, calibración de latencia (CONFIGURACION) y pantalla de
+- **Una pequeña historia** ("El Latido del Abismo"): tres escenas
+  cinemáticas que se desbloquean jugando, coleccionables para releer en
+  LIBRO desde el menú principal.
+- **Español e inglés**, intercambiable desde CONFIGURACIÓN.
+- Menú de pausa (continuar, reiniciar el nivel o salir), calibración de
+  latencia y volumen de música/efectos en CONFIGURACIÓN, y pantalla de
   resultados con precisión.
 
 ## Controles
